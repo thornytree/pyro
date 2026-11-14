@@ -20,7 +20,7 @@ Hard requirement: at least one NASA dataset or API. NASA FIRMS covers it.
 | FIRMS archive | Done. 21.0 M detections from all five sensors harmonized into one schema in `data/firms_harmonized` (gitignored). See [firms-harmonization.md](firms-harmonization.md) |
 | Ingestion code | Started. Python: FIRMS archive normalizer and loader in `apps/inference/sources/firms/`, schema and 50 km grid in `apps/inference/shared/`. TypeScript: scheduled ingestion in `apps/orchestrator/src/fan-out/` (decision 2): nationwide FIRMS poll of all five sensors, per-active-tile Open-Meteo sampling, tile lifecycle. Not yet wired to a route or run against the live APIs. NIFC / WFIGS, LANDFIRE and Daymet not started |
 | Model code | Not started |
-| Website / map | `apps/web`: MapLibre map with national view, state hover, statewide preview and tile drill-down, terrain (elevation tint, hillshade, contours) under the tile view, compass and scale bar. Runs on mock data only; the API contracts are web-side proposals. See `apps/web/README.md` |
+| Website / map | `apps/web`: MapLibre map with national view, state hover, statewide preview and tile drill-down; opens the user's state from browser location; zoom in/out focuses and leaves states; terrain (elevation tint, hillshade, contours) under the tile view, compass and scale bar. Runs on mock data only; the API contracts are web-side proposals. See [frontend.md](frontend.md) and `apps/web/README.md` |
 | Orchestrator | Express server that starts the ingestion scheduler when `FIRMS_MAP_KEY` is set. `GET /tiles` and `GET /states/{fips}/preview` are not implemented |
 | Repo | App scaffolds under `apps/`, docs and folder READMEs |
 
@@ -29,6 +29,7 @@ Hard requirement: at least one NASA dataset or API. NASA FIRMS covers it.
 - [decisions.md](decisions.md): what the team has decided, with dates
 - [data-sources.md](data-sources.md): which sources we use, which we dropped, and why
 - [model-outline.md](model-outline.md): agreed structure for the Pyro model
+- [frontend.md](frontend.md): what the map site does so far, and its gaps
 - [firms-harmonization.md](firms-harmonization.md): results and caveats of the FIRMS archive harmonization
 - [risks-and-open-questions.md](risks-and-open-questions.md): known gaps and things nobody has verified yet
 

@@ -176,6 +176,27 @@ footer {
   border-radius: 2px;
 }
 
+.location {
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
+button:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+/* Quick return to the national view, over the map beside the zoom buttons. */
+.map-return {
+  position: absolute;
+  top: 10px;
+  right: 52px;
+  z-index: 1;
+  margin: 0;
+  background: var(--panel);
+  font-weight: 500;
+}
+
 /* Fixed map overlay: compass and scale bar. Bottom right on wide screens,
    top left on narrow ones where the panel sits at the bottom. */
 .map-hud {
