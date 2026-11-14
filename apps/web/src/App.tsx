@@ -101,6 +101,7 @@ export function App({ config }: { config: AppConfig }) {
     <div className="app">
       <MapView
         styleUrl={config.mapStyleUrl}
+        terrain={config.terrain}
         states={states}
         selectedState={state}
         preview={state && preview.kind === "loaded" ? preview.preview : null}
@@ -128,10 +129,11 @@ export function App({ config }: { config: AppConfig }) {
         ) : (
           <p>Hover over a state to highlight it, then click to open its fire preview.</p>
         )}
-        <Legend />
+        <Legend terrain={tile !== null && config.terrain !== null} />
         <footer>
           Data: NASA FIRMS (fire detections), Open-Meteo (weather), LANDFIRE
           (fuels and terrain). State outlines: US Census Bureau.
+          {config.terrain && <> {config.terrain.attribution}.</>}
         </footer>
       </aside>
     </div>
