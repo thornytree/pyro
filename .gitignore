@@ -1,0 +1,14 @@
+# secrets
+.env
+.env.*
+
+# data and model artifacts
+data/
+*.nc
+*.tif
+*.pt
+
+# python
+__pycache__/
+*.pyc
+.venv/
