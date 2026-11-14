@@ -13,6 +13,12 @@
 | 7 | Coverage is all of CONUS | Any CONUS tile can be requested. FIRMS is polled nationwide; weather and the model still run per active tile only (decision 2). |
 | 8 | Label source is NIFC / WFIGS | Incident locations and perimeters as confirmed-fire labels. Endpoints, fields, history depth and licence are not yet verified. |
 | 9 | Model is a latent fire state with per-sensor likelihoods | As in `model-outline.md`. The plain-features alternative is rejected. Requires per-sensor overpass coverage. |
+| 10 | Map library is MapLibre GL JS | Open source, no API token. Basemap style URL is configuration (`VITE_MAP_STYLE_URL`). Chosen while building the first cut of `apps/web`; not yet reviewed by the team. |
+
+## Proposed, not agreed (2026-11-14)
+
+- **Web / orchestrator contract.** `GET /tiles?lat=&long=` returning tile ID, status (`ready` or `queued`), bounds, and GeoJSON cells and detections in EPSG:4326. Written from the web side only; see `apps/web/README.md`.
+- **Showing detection age and uncertainty.** Detections fade over 24 hours; cells get fainter as uncertainty rises.
 
 ## Design for decision 2
 

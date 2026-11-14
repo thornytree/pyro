@@ -19,7 +19,7 @@ Hard requirement: at least one NASA dataset or API. NASA FIRMS covers it.
 | Model design | Structure agreed (latent fire state, per-sensor likelihoods), see [model-outline.md](model-outline.md) |
 | Ingestion code | Not started |
 | Model code | Not started |
-| Website / map | Not started |
+| Website / map | First cut in `apps/web`: MapLibre map, tile panel, legend. Runs on mock data only; the API contract is a web-side proposal. See `apps/web/README.md` |
 | Repo | App scaffolds under `apps/`, docs and folder READMEs |
 
 ## Docs in this folder
@@ -48,7 +48,7 @@ Hard requirement: at least one NASA dataset or API. NASA FIRMS covers it.
 
 Added 2026-11-14, moved under `apps/` the same day to match the team structure. One folder per work item; each has a README with inputs, outputs and open questions.
 
-- `apps/web/`: the map site (TypeScript, React/Vite)
+- `apps/web/`: the map site (TypeScript, React/Vite, MapLibre GL JS)
 - `apps/orchestrator/`: public API (TypeScript, Express)
 - `apps/orchestrator/trigger/`: lat/long input
 - `apps/inference/`: Python pipeline and model, exposed via FastAPI

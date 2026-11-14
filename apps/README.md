@@ -2,7 +2,7 @@
 
 | App | Language | Role |
 |---|---|---|
-| `web/` | TypeScript (React/Vite) | Map site. Talks only to the orchestrator. |
+| `web/` | TypeScript (React/Vite, MapLibre) | Map site. Talks only to the orchestrator. Runs on mock data until the orchestrator serves `GET /tiles`. |
 | `orchestrator/` | TypeScript (Express) | Public API. Receives user requests, resolves tiles, calls the inference API. |
 | `inference/` | Python (FastAPI) | Data pipeline and Pyro model, exposed to the orchestrator over HTTP. |
 
@@ -22,5 +22,7 @@
 
 Data flow: `web` -> `orchestrator/trigger` -> inference API -> `sources/*` -> `harmonization` -> `model/inference` -> response.
 Training uses the same `sources/*` and `harmonization` code on historical dates, so features match at train and serve time.
+
+The `web` -> `orchestrator` contract (`GET /tiles?lat=&long=`) is a proposal from the web side, documented in `web/README.md`. It is not yet agreed or implemented.
 
 Each folder's README states its inputs, outputs and open questions. See `docs/handover/` for source decisions and risks.
