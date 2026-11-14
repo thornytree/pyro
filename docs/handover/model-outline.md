@@ -1,6 +1,6 @@
-# Model outline (proposal)
+# Model outline
 
-Status: proposed on 2026-11-14, not yet agreed by the team. Nothing here is implemented.
+Status: structure agreed on 2026-11-14 (latent fire state with per-sensor likelihoods). Nothing here is implemented.
 
 ## Idea
 
@@ -8,7 +8,7 @@ Treat "is there a wildfire in this grid cell at this time" as a hidden variable.
 
 ## Structure
 
-- **Grid:** CONUS divided into fixed cells, time in fixed steps. Cell size and step are undecided.
+- **Grid:** CONUS divided into fixed 50 km x 50 km tiles. The model runs per active tile, on cells inside it, in fixed time steps. Cell size and time step are undecided.
 - **Latent state:** `fire[cell, t]`, Bernoulli.
 - **Prior:** `P(fire)` from a regression on
   - Open-Meteo: wind, gusts, relative humidity, vapour pressure deficit, soil moisture, recent precipitation, temperature
@@ -25,16 +25,15 @@ Treat "is there a wildfire in this grid cell at this time" as a hidden variable.
 
 - Detections: FIRMS archive
 - Weather: Open-Meteo Historical Weather API for the same dates and cells
-- Labels: undecided, see risks doc. Without labels the per-sensor rates are only identifiable from sensor agreement.
+- Labels: NIFC / WFIGS incident locations and perimeters (decided 2026-11-14, feed details unverified). They anchor the per-sensor detection and false-alarm rates. A cell with no WFIGS incident is not proof of no fire, because small fires can go unreported.
 - Inference: stochastic variational inference in Pyro is the default choice; revisit if the grid makes it too slow.
 
 ## Decisions needed
 
-1. Cell size and time step (drives data volume and API call counts)
-2. Label source
-3. Train on NRT or science-quality detections (see risks doc)
-4. How to get overpass coverage per source
-5. Whether the hackathon demo covers all of CONUS or one region (for example California) at higher resolution
+1. Model cell size inside a tile, and time step (drives data volume and API call counts)
+2. Train on NRT or science-quality detections (see risks doc)
+3. How to get overpass coverage per source (required by the agreed structure)
+4. How WFIGS incidents and perimeters are rasterized into per-cell labels
 
 ## Later: spread prediction
 
@@ -45,4 +44,4 @@ Extend the neighbour term in the prior with wind direction and slope so probabil
 - First target is burn probability. Spread direction, rate and perimeter are a proof of concept on fires with perimeter data (see `decisions.md`).
 - The model runs per active tile, not across all of CONUS.
 - Daymet is a training-only input.
-- Still open: whether the model arbitrates between sensors as outlined above, or takes the harmonized bundle as plain features.
+- Decided: the model arbitrates between sensors as outlined above. Tiles are 50 km, coverage is all of CONUS, and labels come from NIFC / WFIGS (decisions 6 to 9 in `decisions.md`).
