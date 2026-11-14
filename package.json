@@ -10,7 +10,10 @@
     "dev:orchestrator": "npm run dev --workspace @pyro/orchestrator"
   },
   "devDependencies": {
-    "typescript": "^5.0.0",
-    "@types/node": "^22.0.0"
+    "@types/node": "^22.0.0",
+    "typescript": "^5.0.0"
+  },
+  "dependencies": {
+    "openmeteo": "^1.2.3"
   }
 }
