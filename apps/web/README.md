@@ -19,8 +19,9 @@ Opens on port 5173. With `VITE_USE_MOCK=true` the app renders generated tiles wi
 
 ## Interaction
 
-1. **National view.** Hovering a state enlarges it (scaled 8% about its centre in Web Mercator, with a drop shadow; instant if the user prefers reduced motion). Clicking opens it.
-2. **State view.** The map frames the state, dims everything else and loads a coarse preview: one square per 50 km tile, coloured by that tile's highest cell. Hovering outlines the tile a click would load. "Open the highest-risk tile" jumps to the hottest one. Clicking a neighbouring state switches to it; "All states" or Esc goes back.
+0. **Location.** On load the browser asks for the user's location. If they allow it and the point is in a CONUS state, that state opens (unless they already opened one) and a blue dot marks them. "Use my location" asks again. The tile itself is not loaded, because loading a tile activates it.
+1. **National view.** Hovering a state enlarges it (scaled 8% about its centre in Web Mercator, with a drop shadow; instant if the user prefers reduced motion). Clicking opens it, and so does zooming in one level past the national framing (the hovered state, or the one at the centre of the view).
+2. **State view.** The map frames the state, dims everything else and loads a coarse preview: one square per 50 km tile, coloured by that tile's highest cell. Hovering outlines the tile a click would load. "Open the highest-risk tile" jumps to the hottest one. Clicking a neighbouring state switches to it; "All states", the "← US map" button on the map, Esc, or zooming out one level past the state's framing goes back. Thresholds are in `src/map/interaction.ts`.
 3. **Tile view.** Clicking inside the open state calls `GET /tiles` as before and draws the full-resolution cells and detections in place of that tile's preview square. Terrain is drawn underneath: an elevation tint, multidirectional hillshade and contour lines (metres; majors labelled when the basemap has glyphs). Cells and preview squares are drawn lighter in this view so the relief shows through. Terrain is off when `VITE_TERRAIN_DEM_URL` is empty.
 
 A fixed north arrow and a metric / imperial scale bar sit bottom right (top left on phones). The map cannot be rotated or tilted, so north is always up and the scale bar, measured at the centre of the view, stays accurate across it.

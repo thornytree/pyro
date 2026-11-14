@@ -1,6 +1,6 @@
 # Model outline
 
-Status: structure agreed on 2026-11-14 (latent fire state with per-sensor likelihoods). Nothing here is implemented.
+Status: structure agreed on 2026-11-14 (latent fire state with per-sensor likelihoods). The model itself is not implemented; the harmonized FIRMS training data is ready (see `firms-harmonization.md`).
 
 ## Idea
 
@@ -23,7 +23,7 @@ Treat "is there a wildfire in this grid cell at this time" as a hidden variable.
 
 ## Training
 
-- Detections: FIRMS archive
+- Detections: FIRMS archive, harmonized into `data/firms_harmonized` (21.0 M detections, five sensors). Load with `read_harmonized` in `apps/inference/sources/firms/archive.py`. Every sensor has a 0/1/2 confidence class; Landsat has no FRP or brightness, so FRP-dependent likelihood terms need a fallback for it. About 12% of rows are flagged non-fire (volcano, static source, offshore) and should be filtered or modelled separately. Landsat has no such flag; see the Landsat assessment in `decisions.md` before setting its false-alarm prior.
 - Weather: Open-Meteo Historical Weather API for the same dates and cells
 - Labels: NIFC / WFIGS incident locations and perimeters (decided 2026-11-14, feed details unverified). They anchor the per-sensor detection and false-alarm rates. A cell with no WFIGS incident is not proof of no fire, because small fires can go unreported.
 - Inference: stochastic variational inference in Pyro is the default choice; revisit if the grid makes it too slow.

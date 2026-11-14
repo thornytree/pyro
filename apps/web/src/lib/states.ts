@@ -4,7 +4,7 @@ import type { Feature, FeatureCollection } from "geojson";
 import { feature } from "topojson-client";
 import type { GeometryCollection, Topology } from "topojson-specification";
 import statesTopology from "us-atlas/states-10m.json";
-import type { Area } from "./geo";
+import { containsPoint, type Area } from "./geo";
 
 export interface StateProperties {
   /** Two-digit state FIPS code, e.g. "06" for California. */
@@ -44,4 +44,13 @@ let cache: StateFeature[] | null = null;
 export function conusStates(): StateFeature[] {
   cache ??= toConusStates(statesTopology as unknown as Topology);
   return cache;
+}
+
+/** The state containing a point, if any. */
+export function stateAt(
+  states: StateFeature[],
+  lat: number,
+  long: number,
+): StateFeature | undefined {
+  return states.find((s) => containsPoint(s.geometry, long, lat));
 }

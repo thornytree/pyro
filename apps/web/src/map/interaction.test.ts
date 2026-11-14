@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { resolveClick } from "./interaction";
+import { resolveClick, resolveZoom } from "./interaction";
 
 describe("resolveClick", () => {
   it("opens a state from the national view", () => {
@@ -14,5 +14,20 @@ describe("resolveClick", () => {
   it("ignores clicks off any state", () => {
     expect(resolveClick(null, null)).toEqual({ kind: "none" });
     expect(resolveClick("06", null)).toEqual({ kind: "none" });
+  });
+});
+
+describe("resolveZoom", () => {
+  it("focuses a state once zoomed in past the national framing", () => {
+    expect(resolveZoom(3.5, 3, null)).toEqual({ kind: "none" });
+    expect(resolveZoom(4, 3, null)).toEqual({ kind: "focus" });
+  });
+  it("keeps the open state while near its framing", () => {
+    expect(resolveZoom(6, 3, 6)).toEqual({ kind: "none" });
+    expect(resolveZoom(9, 3, 6)).toEqual({ kind: "none" });
+    expect(resolveZoom(5.5, 3, 6)).toEqual({ kind: "none" });
+  });
+  it("unfocuses once zoomed well out of the open state", () => {
+    expect(resolveZoom(5, 3, 6)).toEqual({ kind: "unfocus" });
   });
 });

@@ -47,9 +47,9 @@ function makeBundle(): dataBundle {
       samples: [{ requested_location: location, source_location: location, elevation_m: 100, observation_time, current: weather, hourly: [] }],
     },
     fire: { detections: [
-      { source: "MODIS_NRT", instrument: "MODIS", satellite: "Terra", location, observation_time,
+      { source: "MODIS_NRT", instrument: "MODIS", satellite: "Terra", location, tile_id: "r24c07", observation_time,
         frp_mw: 12, scan_km: 1, track_km: 1, confidence: { kind: "percent", value: 80 } },
-      { source: "VIIRS_SNPP_NRT", instrument: "VIIRS", satellite: "N", location, observation_time,
+      { source: "VIIRS_SNPP_NRT", instrument: "VIIRS", satellite: "N", location, tile_id: "r24c07", observation_time,
         frp_mw: 8, scan_km: 0.4, track_km: 0.4, confidence: { kind: "category", value: "nominal" } },
     ] },
     historical_weather: {

@@ -18,15 +18,17 @@ export type FirmsSource =
   | "MODIS_NRT"
   | "VIIRS_SNPP_NRT"
   | "VIIRS_NOAA20_NRT"
-  | "VIIRS_NOAA21_NRT";
+  | "VIIRS_NOAA21_NRT"
+  | "LANDSAT_NRT";
 
 export type FireDetection = {
   source: FirmsSource;
-  instrument: "MODIS" | "VIIRS";
+  instrument: "MODIS" | "VIIRS" | "OLI";
   satellite: string;
   location: dataBundle["location"];
+  tile_id: string | null; // Optional scheduler grid assignment; null outside its frame
   observation_time: string; // Acquisition time in UTC
-  frp_mw: number;
+  frp_mw: number | null; // Landsat does not report FRP
   scan_km: number;
   track_km: number;
   confidence:
@@ -139,4 +141,39 @@ export type VegetationAttributes = {
     columns: number;
     cells: Array<dataBundle["location"] & VegetationValues>;
   };
+};
+
+
+export type LatLon = { latitude: number; longitude: number };
+
+/** One FIRMS poll across the whole CONUS frame. Replaced wholesale on each poll. */
+export type NationalDetections = {
+  fetched_at: string;
+  days: number;
+  detections: FireDetection[];
+};
+
+export type WeatherPoint = {
+  location: LatLon;
+  temperature: number; // Celsius
+  humidity: number; // Percent
+  wind_speed_kph: number;
+  wind_direction: number; // Degrees clockwise from north; direction the wind comes from
+  elevation_m: number;
+};
+
+/** Current weather sampled on a coarse grid inside one tile. */
+export type TileWeather = {
+  tile_id: string;
+  observation_time: string;
+  spacing_m: number;
+  points: WeatherPoint[];
+};
+
+/** Everything the orchestrator holds for one active tile. */
+export type TileBundle = {
+  tile_id: string;
+  status: "ready" | "queued";
+  fire: { fetched_at: string | null; detections: FireDetection[] };
+  weather: TileWeather | null;
 };

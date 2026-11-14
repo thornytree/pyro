@@ -28,6 +28,7 @@ Decision date: 2026-11-14. Facts below were read from each provider's page on th
 - NRT feeds include real-time and ultra-real-time detections, which are removed once the matching NRT record is processed or after 6 hours. Expect detections to appear and then be replaced; dedupe on ingest.
 - `/api/data_availability/` reports which dates each source has
 - Why core: several independent sensors observing the same ground is exactly what the model arbitrates between
+- Status (2026-11-14): scheduled nationwide poll of all five NRT feeds, including `LANDSAT_NRT` (decisions 11 and 12), in `apps/orchestrator/src/fan-out/firms.ts`; not yet called with a real MAP_KEY. Landsat rows have no `frp` column.
 - Unverified: returned column names. The page links to per-sensor attribute tables that were not read. Expected from memory: latitude, longitude, acquisition date/time, confidence, FRP, brightness temperature. Confirm with a test call.
 
 ### NASA FIRMS Archive
@@ -37,6 +38,7 @@ Decision date: 2026-11-14. Facts below were read from each provider's page on th
 - Formats: shapefile, CSV, JSON
 - Access: submit a request (Earthdata Login or emailed one-time code), download link arrives by email. Turnaround is not stated.
 - NRT data is replaced by science-quality data after about 5 months, so the archive and the live feed differ slightly for recent dates
+- Status (2026-11-14): obtained for all five sensors and harmonized; see `firms-harmonization.md`. Archive column names are verified. The data has NOAA-21 rows from March 2023, earlier than the start date above, and S-NPP ends on 2 November.
 
 ### Open-Meteo
 
@@ -46,6 +48,7 @@ Decision date: 2026-11-14. Facts below were read from each provider's page on th
 - HRRR is marked as discontinued on 2026-11-30. Request RRFS or best match, never HRRR by name.
 - Historical Weather API and Historical Forecast API exist alongside the forecast API; `past_days` goes up to 92
 - Why core: one provider for both training history and live inference keeps features consistent
+- Status (2026-11-14): current weather (temperature, humidity, 10 m wind speed and direction, elevation) at 25 points per active tile, one request per tile per hour, in `apps/orchestrator/src/fan-out/meteo.ts` using the `openmeteo` npm SDK. No historical ingestion yet.
 - Unverified: free-tier call cap and exact non-commercial terms (on the pricing page, not read). Check before polling a dense CONUS grid.
 
 ### LANDFIRE

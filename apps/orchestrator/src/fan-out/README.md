@@ -1,24 +1,23 @@
-# trigger
+# Fan-out
 
-Work item 1: user trigger inputs. Part of the TypeScript orchestrator.
+The Express request path fetches all five providers concurrently for a centered
+300-square-mile region. It returns observations and a normalized bundle after all
+providers succeed. Environment loading, validation and HTTP routes are documented
+in `../../README.md`.
 
-- **Input:** `lat`, `long` from the map, or a shared tile ID.
-- **Output:** the ID of the tile containing the point. The tile is marked active so the scheduler processes it.
+## Optional scheduled-ingestion path
 
-The trigger does not fetch external data itself. Ingestion is scheduled (see `../../../../docs/handover/decisions.md`): a request returns the cached result for the tile (from the `apps/inference` API), or queues the tile if it is not yet active.
+The merge from main also retains `grid.ts`, `scheduler.ts`, `requestTileAt`,
+`fetchFirmsNationwide` and `getTileWeather`. These form a separate fixed 50 km
+EPSG:5070 grid path, matching the Python grid in `apps/inference/shared/grid.py`.
+It supports nationwide polling of MODIS, VIIRS and Landsat, plus weather refresh
+for active tiles. Detections now carry that grid's `tile_id` where available;
+Landsat has null FRP and nominal 30 m pixel sizes.
 
-## What `apps/web` expects
-
-The web app (added 2026-11-14) calls `GET /tiles?lat=<number>&long=<number>` and expects the response described under "Proposed API contract" in `apps/web/README.md` (types in `apps/web/src/api/types.ts`). It also calls `GET /states/{fips}/preview` for a coarse per-tile overview of one state (same README). Both are proposals from the web side, not agreed interfaces, and nothing here implements them yet. Change them on both sides together.
-
-## Open questions
-
-- Agree or amend the `GET /tiles` and `GET /states/{fips}/preview` contracts proposed by `apps/web`, including the error body and status code for a point outside CONUS.
-- What the state preview shows for tiles that are not active and so have no model output (see the caveat in `apps/web/README.md`).
-
-- Tile ID scheme and projection for the 50 km x 50 km grid (tile size decided 2026-11-14).
-- What the user sees while a newly requested tile is being processed.
-- Validate that the point is inside the supported area (CONUS).
+This scheduler is not started by Express: enabling it must be an explicit choice.
+Its 50 km tile frame does not replace the requested 300-square-mile region or the
+request-driven HTTP contract. Regional FIRMS requests retain the four MODIS/VIIRS
+feeds; the optional nationwide snapshot includes Landsat as its fifth feed.
 
 ## Current prototype
 
@@ -61,7 +60,8 @@ range and set `EARTHDATA_TOKEN` in the server environment for authorized NASA
 Earthdata access. This is a different credential from `FIRMS_MAP_KEY`. The adapter
 sends the token as a Bearer authorization header. Dataset availability is checked
 by the upstream API; unavailable recent dates fail rather than falling back to an
-older year. Neither a `.env` loader nor automatic credential acquisition is provided.
+older year. Express loads the server `.env`; standalone adapter calls require environment
+setup by their caller. Credential acquisition is manual.
 
 Historical data goes under `historical_weather`. Each native Daymet grid retains
 coordinates, units, daily date labels and time-major values; missing and out-of-area
