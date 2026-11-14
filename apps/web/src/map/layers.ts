@@ -11,6 +11,7 @@ export const LIFT_SOURCE = "pyro-lift";
 
 export const STATES_FILL_LAYER = "pyro-states-fill";
 export const PREVIEW_FILL_LAYER = "pyro-preview-fill";
+export const CELLS_FILL_LAYER = "pyro-cells-fill";
 
 /** How much a hovered state grows, and how long the grow animation takes. */
 export const LIFT_SCALE = 1.08;
@@ -36,6 +37,27 @@ const probabilityColour = (property: string): ExpressionSpecification => [
   ["!=", ["typeof", ["get", property]], "number"],
   NO_DATA_COLOUR,
   ["interpolate", ["linear"], ["get", property], ...PROBABILITY_STOPS.flat()],
+];
+
+/**
+ * Opacity [most certain, least certain]. Cells and preview squares are drawn
+ * lighter over terrain so the relief and contours show through.
+ */
+export const CELL_OPACITY = { plain: [0.8, 0.25], overTerrain: [0.62, 0.18] } as const;
+export const PREVIEW_OPACITY = { plain: [0.75, 0.3], overTerrain: [0.4, 0.15] } as const;
+
+/** Fainter as uncertainty (0 to 1) rises; missing uncertainty counts as 1. */
+export const uncertaintyOpacity = (
+  property: string,
+  [certain, uncertain]: readonly [number, number],
+): ExpressionSpecification => [
+  "interpolate",
+  ["linear"],
+  ["coalesce", ["get", property], 1],
+  0,
+  certain,
+  1,
+  uncertain,
 ];
 
 const hovered: ExpressionSpecification = ["boolean", ["feature-state", "hover"], false];
@@ -65,15 +87,7 @@ export const LAYERS: LayerSpecification[] = [
     source: PREVIEW_SOURCE,
     paint: {
       "fill-color": probabilityColour("peakProbability"),
-      "fill-opacity": [
-        "interpolate",
-        ["linear"],
-        ["coalesce", ["get", "meanUncertainty"], 1],
-        0,
-        0.75,
-        1,
-        0.3,
-      ],
+      "fill-opacity": uncertaintyOpacity("meanUncertainty", PREVIEW_OPACITY.plain),
     },
   },
   {
@@ -97,21 +111,13 @@ export const LAYERS: LayerSpecification[] = [
     paint: { "line-color": "#fe9f6d", "line-width": 2 },
   },
   {
-    id: "pyro-cells-fill",
+    id: CELLS_FILL_LAYER,
     type: "fill",
     source: CELLS_SOURCE,
     paint: {
       "fill-color": probabilityColour("probability"),
       // Less certain cells are drawn fainter.
-      "fill-opacity": [
-        "interpolate",
-        ["linear"],
-        ["get", "uncertainty"],
-        0,
-        0.8,
-        1,
-        0.25,
-      ],
+      "fill-opacity": uncertaintyOpacity("uncertainty", CELL_OPACITY.plain),
     },
   },
   {

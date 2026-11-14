@@ -44,6 +44,7 @@ describe("loadConfig", () => {
       orchestratorUrl: "http://localhost:3001",
       mapStyleUrl: style,
       useMock: false,
+      terrain: null,
     });
   });
 
@@ -58,5 +59,37 @@ describe("loadConfig", () => {
 
   it("requires the map style URL", () => {
     expect(() => loadConfig({ VITE_USE_MOCK: "true" })).toThrow(/VITE_MAP_STYLE_URL/);
+  });
+
+  describe("terrain", () => {
+    const base = { VITE_MAP_STYLE_URL: style, VITE_USE_MOCK: "true" };
+    const terrain = {
+      VITE_TERRAIN_DEM_URL: "https://dem.test/{z}/{x}/{y}.png",
+      VITE_TERRAIN_DEM_ENCODING: "terrarium",
+      VITE_TERRAIN_DEM_MAXZOOM: "15",
+      VITE_TERRAIN_ATTRIBUTION: "Elevation: test",
+    };
+
+    it("is off when no DEM URL is set", () => {
+      expect(loadConfig(base).terrain).toBeNull();
+    });
+
+    it("reads the DEM settings", () => {
+      expect(loadConfig({ ...base, ...terrain }).terrain).toEqual({
+        demUrl: terrain.VITE_TERRAIN_DEM_URL,
+        encoding: "terrarium",
+        maxZoom: 15,
+        attribution: "Elevation: test",
+      });
+    });
+
+    it.each([
+      ["VITE_TERRAIN_DEM_ENCODING", "png", /terrarium/],
+      ["VITE_TERRAIN_DEM_MAXZOOM", "12.5", /integer/],
+      ["VITE_TERRAIN_DEM_MAXZOOM", "30", /integer/],
+      ["VITE_TERRAIN_ATTRIBUTION", "", /VITE_TERRAIN_ATTRIBUTION/],
+    ])("rejects %s=%s", (name, value, message) => {
+      expect(() => loadConfig({ ...base, ...terrain, [name]: value })).toThrow(message);
+    });
   });
 });
