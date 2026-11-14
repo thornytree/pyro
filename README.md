@@ -1,6 +1,6 @@
 # Pyro
 
-- `apps/web`: React/Vite map site (MapLibre). National view, state preview, tile heat map with terrain. Live/predictive mode only; the historical mode and the switch between them are not built yet. Runs on mock data until the orchestrator serves tiles; see `apps/web/README.md`.
+- `apps/web`: React/Vite map site (MapLibre). National view, state preview, about 1 km tile heat map with terrain, live/predictive and historical modes, experimental predicted spread. Runs on mock data until the orchestrator serves tiles; see `apps/web/README.md`.
 - `apps/orchestrator`: TypeScript/Express server. Runs scheduled FIRMS and Open-Meteo ingestion when `FIRMS_MAP_KEY` is set; no tile routes yet.
 - `apps/inference`: Python. FIRMS archive normalizer and loader, 50 km tile grid. FastAPI service and model not started.
 

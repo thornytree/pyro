@@ -22,6 +22,7 @@ Last updated: 2026-11-14 (evening, after the FIRMS harmonization and orchestrato
 | Attribution | Mendeley dataset is CC BY 4.0. | Credit it on the site if used. |
 | Web app runs on mock data | `apps/web` renders generated tiles; nothing real reaches the map yet. A demo could be mistaken for model output. | Keep the "mock data" badge; implement `GET /tiles` in the orchestrator and switch `VITE_USE_MOCK` off. |
 | API contract is one-sided | The tile response shape was defined by the web app alone. Inference may not be able to produce it cheaply (GeoJSON polygons per cell). | Agree it across the three apps before building either side further. |
+| Spread shown before a spread model exists | The live map draws predicted spread outlines from a mock formula (wind, humidity). It could be read as a real forecast, which matters if it reaches public safety users. | Keep the "experimental" and "mock data" labels; replace it with model output checked against the historical perimeters before any outside demo. |
 | Basemap provider terms | The example basemap (OpenFreeMap) was not reachable from the build sandbox and its terms were not read. | Verify it loads and check terms, or pick another MapLibre style. |
 
 ## Unverified facts
@@ -47,4 +48,5 @@ These came from memory or were not on the pages read. Confirm before building on
 5. Does a second NASA dataset (for example Daymet) help with judging enough to justify the work?
 6. Are the `GET /tiles` and `GET /states/{fips}/preview` contracts proposed in `apps/web/README.md` acceptable to the orchestrator and inference owners? What should the preview show for inactive tiles?
 7. Are the polling cadence (FIRMS every 15 minutes, weather hourly) and the 200 active-tile cap right?
-8. What does the historical map mode show: archived observations and perimeters only, or model hindcasts too (which need a trained model)? Over what date range and time step? It needs a read-only, date-scoped endpoint that does not activate tiles.
+8. What does the historical map mode show: archived observations and perimeters only, or model hindcasts too (which need a trained model)? The web side proposes read-only `/history` routes with a daily time step, from November 2000.
+9. Should the live model predict spread (the web shows 6, 12 and 24 h outlines from a mock formula)? If so, who builds it, and how is it checked against the historical perimeters? Weather is sampled every 10 km, coarser than the 1 km cells the web now assumes.

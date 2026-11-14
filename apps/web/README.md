@@ -22,9 +22,9 @@ Opens on port 5173. With `VITE_USE_MOCK=true` (the default in `.env.example`) th
 0. **Location.** On load the browser asks for the user's location. If they allow it and the point is in a CONUS state, that state opens (unless they already opened one) and a blue dot marks them. "Use my location" asks again. The tile itself is not loaded, because loading a tile activates it.
 1. **National view.** Hovering a state enlarges it (scaled 8% about its centre in Web Mercator, with a drop shadow; instant if the user prefers reduced motion). Clicking opens it, and so does zooming in one level past the national framing (the hovered state, or the one at the centre of the view).
 2. **State view.** The map frames the state, dims everything else and loads a coarse preview: one square per 50 km tile, coloured by that tile's highest cell. Hovering outlines the tile a click would load. "Open the highest-risk tile" jumps to the hottest one. Clicking a neighbouring state switches to it; "All states", the "← US map" button on the map, Esc, or zooming out one level past the state's framing goes back. Thresholds are in `src/map/interaction.ts`.
-3. **Tile view.** Clicking inside the open state calls `GET /tiles` as before and draws the full-resolution cells and detections in place of that tile's preview square. Terrain is drawn underneath: an elevation tint, multidirectional hillshade and contour lines (metres; majors labelled when the basemap has glyphs). Cells and preview squares are drawn lighter in this view so the relief shows through. Terrain is off when `VITE_TERRAIN_DEM_URL` is empty.
+3. **Tile view.** Clicking inside the open state calls `GET /tiles` as before and draws the full-resolution cells (about 1 km in the mock) and detections in place of that tile's preview square. In live mode, cells at 80% or more get a predicted spread: outlines for 6, 12 and 24 h and an arrow along the head fire, with the weather behind it in the panel. "Show on map" hides them. Terrain is drawn underneath: an elevation tint, multidirectional hillshade and contour lines (metres; majors labelled when the basemap has glyphs). Cells and preview squares are drawn lighter in this view so the relief shows through. Terrain is off when `VITE_TERRAIN_DEM_URL` is empty.
 
-All of the above is the **live / predictive** map. There is no historical mode yet; see "Not built yet" below.
+4. **Mode switch.** "Live / predictive" or "Historical" at the top of the panel. Historical adds a date field and day-step buttons (1 Nov 2000, the start of the FIRMS archive, to yesterday). Switching keeps the open state and tile and reloads them in the new mode, so one place can be compared across modes. A banner over the map always names the mode and day. The mode is in the URL (`?mode=historical&date=2021-08-20`) so a replay can be shared; a bad date falls back to the nearest valid one.
 
 A fixed north arrow and a metric / imperial scale bar sit bottom right (top left on phones). The map cannot be rotated or tilted, so north is always up and the scale bar, measured at the centre of the view, stays accurate across it.
 
@@ -34,27 +34,28 @@ A fixed north arrow and a metric / imperial scale bar sit bottom right (top left
 - `src/api/types.ts`: the proposed tile contract (below).
 - `src/api/client.ts`: orchestrator client. `src/api/mock.ts`: generated tiles with the same shape.
 - `src/map/`: MapLibre map and layer styling. `terrain.ts` builds the DEM and contour sources and layers.
-- `src/components/`: side panel, legend and map HUD (compass, scale bar).
-- `src/lib/`: scale bar maths (`scale.ts`), CONUS bounds pre-check, detection age helpers, state outlines (`states.ts`), geometry helpers (`geo.ts`), preview summary.
+- `src/components/`: side panel, mode switch, legend and map HUD (compass, scale bar).
+- `src/lib/`: map modes and URL state (`mode.ts`), spread ellipse geometry (`spread.ts`), scale bar maths (`scale.ts`), CONUS bounds pre-check, detection age helpers, state outlines (`states.ts`), geometry helpers (`geo.ts`), preview summary.
 
-## Not built yet: historical / live map modes
+## Map modes
 
-The map only has one model: current model output plus the last 24 hours of detections. The plan is two modes with a visible switch between them, labelled differently as decision 3 requires:
+Decision 3 asks for live and historical views to be labelled differently. Both are built on mock data.
 
-| Mode | Shows | Data |
+| | Live / predictive | Historical |
 |---|---|---|
-| **Live / predictive** (built, mock only) | Current burn probability per cell, recent detections. | `GET /tiles`, `GET /states/{fips}/preview`. |
-| **Historical** (not built) | What happened on a chosen past date: archived detections, and where available actual fire perimeters and the model's output for that date (hindcast). | Harmonized FIRMS archive (Nov 2000 to now, `data/firms_harmonized`), Mendeley daily perimeters (western US, 2020 to 2024), model runs on archive dates. No endpoint yet. |
+| Cells | Current burn probability | Model hindcast for that day |
+| Detections | Last 24 h, aged from now | That day, aged from the end of the day |
+| Overlay | Predicted spread around extreme-risk cells | Observed perimeters (western US, 2020 to 2024: Mendeley) |
+| Routes | `GET /tiles`, `GET /states/{fips}/preview` | `GET /history/tiles`, `GET /history/states/{fips}/preview` (read-only) |
+| Activates tiles | Yes (decision 2) | Never |
 
-What the switch needs:
+Mode logic (URL parsing, date range, the reference time detections are aged from) is in `src/lib/mode.ts`; the switch is `src/components/ModeSwitch.tsx`.
 
-- **UI.** A mode toggle in the panel, plus a date picker or time slider in historical mode. The mode and date should go in the URL so a view can be shared. The "mock data" badge and the legend must say which mode is shown so a replay is not read as a current forecast.
-- **State.** `App.tsx` keeps one `selection` and one `preview`; both need to be keyed by mode (and date), and switching mode must abort in-flight requests the same way switching state does.
-- **Contract.** Historical requests must not activate tiles (decision 2), so they need a separate read-only route or a `date` parameter that the orchestrator treats as read-only, for example `GET /tiles?lat=&long=&date=YYYY-MM-DD`. Not proposed to the orchestrator yet.
-- **Mock.** `src/api/mock.ts` needs a date-aware generator, or a small sample cut from the harmonized archive.
-- **Layers.** Perimeters are a new polygon layer; spread direction and rate (decision 3 proof of concept) a later one.
+## Resolution and predicted spread
 
-Open: what "historical model" means in practice (raw observations only, or model hindcasts, which need the model trained first), the date range offered, and the time step (daily is the natural fit for the perimeter data).
+- **Cells.** The mock tile is 50 x 50 cells of 0.01 degrees, about 1.1 km (0.7 mi) north-south, up from 10 x 10. The contract does not fix a cell size, so the real one is still the model's choice (decision 6).
+- **Spread (experimental).** Where a cell reaches 80% (`EXTREME_PROBABILITY` in `src/lib/spread.ts`), the live tile carries spread outlines for 6, 12 and 24 h. The fire is taken to cover the extreme cells already; spread starts at their downwind edge. The shape is the standard wind-driven ellipse: length-to-breadth ratio from midflame wind (Anderson 1983), with midflame wind taken as 0.4 x the 10 m wind. The rate of spread, and so the reach, comes from wind and humidity. The panel shows heading, rate, reach in miles and km per horizon, and the weather used.
+- **Mock only.** The rate formula (`mockRateKmh`) and the 9-mile cap on reach (`MAX_HEAD_KM`) are placeholders in `src/api/mock.ts` to make the UI testable. Real outlines must come from the inference API, which does not predict spread yet; decision 3 limits spread to a proof of concept.
 
 ## Decided here
 
@@ -74,8 +75,13 @@ Open: what "historical model" means in practice (raw observations only, or model
 | `updatedAt` | ISO 8601 string or null | When the model output was produced. |
 | `cells` | GeoJSON FeatureCollection of Polygons | Properties: `probability` (0 to 1), `uncertainty` (0 to 1). |
 | `detections` | GeoJSON FeatureCollection of Points | Properties: `source`, `acquiredAt` (ISO 8601 UTC), `confidence` (0 to 1 or null), `frpMw` (number or null). |
+| `spread` | GeoJSON FeatureCollection of Polygons, optional | Live only; empty when no cell is extreme. One feature per horizon. Properties: `horizonHours`, `confidence` (0 to 1), `origin` ([long, lat] where spread starts), `headingDeg` (clockwise from north), `rateKmh`, `headKm` (distance past `origin`). |
+| `drivers` | object or null, optional | Live only. Weather behind the spread: `observedAt`, `temperatureC`, `relativeHumidityPct`, `windSpeedKmh` (10 m), `windFromDeg`. |
+| `perimeters` | GeoJSON FeatureCollection of Polygons, optional | Historical only; empty where no perimeter data exists. Properties: `fireName`, `date` (YYYY-MM-DD), `source`, `areaKm2`. |
 
 Geometry is GeoJSON in EPSG:4326 so the web app does not depend on the model grid's cell size or projection. A non-2xx status is shown as an error. The exact types are in `src/api/types.ts`.
+
+Historical: `GET {VITE_ORCHESTRATOR_URL}/history/tiles?lat=&long=&date=YYYY-MM-DD` returns the same shape for that UTC day, with `perimeters` instead of `spread` and `drivers`. It is a separate route so the orchestrator can serve it read-only from the archive and never activate a tile.
 
 `GET {VITE_ORCHESTRATOR_URL}/states/{fips}/preview` (two-digit state FIPS code, e.g. `06`) returns:
 
@@ -85,7 +91,7 @@ Geometry is GeoJSON in EPSG:4326 so the web app does not depend on the model gri
 | `updatedAt` | ISO 8601 string or null | Newest model output among the tiles. |
 | `tiles` | GeoJSON FeatureCollection of Polygons | One feature per 50 km tile overlapping the state. Properties: `tileId` (same ID as `GET /tiles`), `peakProbability` (0 to 1, or null if the tile has no output yet), `meanUncertainty` (0 to 1 or null). |
 
-Tiles with `null` values are drawn grey ("no model output yet"). The preview is read-only: it must not activate tiles.
+Tiles with `null` values are drawn grey ("no model output yet"). The preview is read-only: it must not activate tiles. `GET /history/states/{fips}/preview?date=YYYY-MM-DD` returns the same shape for a past day.
 
 ## Caveats
 
@@ -102,13 +108,18 @@ Tiles with `null` values are drawn grey ("no model output yet"). The preview is 
 - **`.env` is required.** The app shows an error page if `VITE_MAP_STYLE_URL` is missing (or `VITE_ORCHESTRATOR_URL` when not mocking). There are no built-in defaults, by design.
 - **MapLibre v6 worker.** MapLibre finds its web worker relative to its own module URL, which Vite rewrites. `src/map/MapView.tsx` imports the worker with `?url` and calls `setWorkerUrl`. Removing that breaks the map with "Worker failed to load".
 - **Bundle size.** About 1.3 MB of JS (370 kB gzipped), nearly all MapLibre. Lazy-load the map if initial load time matters.
-- **Payload size is untested.** One tile as GeoJSON polygons is fine at 100 cells; at a fine cell size (for example 375 m, about 18,000 cells per tile) it may need a raster or a compact array format instead.
-- **No component or end-to-end tests.** Unit tests cover the client, mock, config, geometry, state outlines and click handling. The hover, state and tile flow was checked by hand in a headless browser against a blank basemap.
+- **Payload size.** A mock tile is now 2,500 GeoJSON polygons, about 0.5 MB uncompressed, and renders without trouble. At 375 m (about 18,000 cells per tile) it would need a raster or a compact array format instead.
+- **Spread is ahead of the model.** The model's first target is burn probability (decision 3); nothing on the inference side predicts spread yet. The outlines on screen come from a mock formula. Keep the "experimental" label until a real spread model, checked against the historical perimeters, replaces it.
+- **Weather is coarser than the cells.** Weather is sampled every 10 km per active tile (`apps/orchestrator/src/fan-out/meteo.ts`), so 1 km cells and single-digit-mile spread rely on terrain and fuels (LANDFIRE, 30 m) for detail below that. Wind direction near ridges and canyons can differ a lot from a 10 km sample.
+- **Wind adjustment is a constant.** Midflame wind is taken as 0.4 x the 10 m wind everywhere. The real factor depends on canopy cover and should come from LANDFIRE.
+- **Historical perimeters are thin.** The Mendeley set covers 737 western fires from 2020 to 2024. Elsewhere, and on other dates, the panel says no perimeter was mapped. WFIGS (decision 8) could widen it once verified.
+- **No component or end-to-end tests.** Unit tests cover the client, mock, config, geometry, state outlines, click handling, map modes and spread geometry. The hover, state, tile and mode-switch flows were checked by hand in a headless browser against a blank basemap, on desktop and phone sizes.
 - **Detection ages are computed when a tile loads** and do not tick while the page stays open.
 
 ## Open questions
 
-- Historical / live mode switch: scope, data and contract (see "Not built yet" above).
+- Historical mode: are model hindcasts wanted (they need a trained model), or archived detections and perimeters only? The `/history` routes need agreement with the orchestrator, and the archive needs to be loadable per tile and day.
+- Spread: who builds the spread model, and does it run per active tile with the burn-probability model? Which horizons? What does `confidence` mean exactly?
 - Agree the contract above with the orchestrator and inference owners, including the error body and the status code for a point outside CONUS.
 - What `uncertainty` is (posterior standard deviation, interval width) and how it is scaled to 0 to 1.
 - Queued tiles: the panel shows a "Check again" button. Polling or push is undecided.

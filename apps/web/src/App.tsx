@@ -2,12 +2,14 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createStatePreviewFetcher, createTileFetcher } from "./api/client";
 import { createMockStatePreviewFetcher, mockTileFetcher } from "./api/mock";
 import type { LatLong } from "./api/types";
-import { Legend } from "./components/Legend";
+import { Legend, type LegendOverlay } from "./components/Legend";
+import { ModeSwitch } from "./components/ModeSwitch";
 import { StatePanel, type PreviewSelection } from "./components/StatePanel";
 import { TilePanel, type Selection } from "./components/TilePanel";
 import type { AppConfig } from "./config";
 import { isInConusBounds } from "./lib/conus";
 import { locate } from "./lib/geolocation";
+import { type MapMode, modeFromSearch, modeLabel, modeToSearch, sameMode } from "./lib/mode";
 import { conusStates, stateAt, type StateFeature } from "./lib/states";
 import { MapView } from "./map/MapView";
 
@@ -38,12 +40,18 @@ export function App({ config }: { config: AppConfig }) {
     [config, states],
   );
 
+  const [mode, setMode] = useState<MapMode>(() =>
+    modeFromSearch(window.location.search, new Date()),
+  );
+  const [showSpread, setShowSpread] = useState(true);
   const [state, setState] = useState<StateFeature | null>(null);
   const [preview, setPreview] = useState<PreviewSelection>({ kind: "loading" });
   const [selection, setSelection] = useState<Selection>({ kind: "idle" });
   const [userLocation, setUserLocation] = useState<LatLong | null>(null);
   const [locationStatus, setLocationStatus] = useState<LocationStatus>({ kind: "idle" });
   const lastPoint = useRef<LatLong | null>(null);
+  // Request callbacks read the mode through a ref so a switch can reload at once.
+  const modeRef = useRef(mode);
   const openFips = useRef<string | null>(null);
   const tileRequest = useRef<AbortController | null>(null);
   const previewRequest = useRef<AbortController | null>(null);
@@ -61,7 +69,7 @@ export function App({ config }: { config: AppConfig }) {
       tileRequest.current = controller;
       setSelection({ kind: "loading" });
       try {
-        const tile = await fetchTile(point, controller.signal);
+        const tile = await fetchTile(point, modeRef.current, controller.signal);
         if (!controller.signal.aborted) setSelection({ kind: "loaded", tile });
       } catch (error) {
         if (controller.signal.aborted) return;
@@ -69,6 +77,23 @@ export function App({ config }: { config: AppConfig }) {
       }
     },
     [fetchTile],
+  );
+
+  const loadPreview = useCallback(
+    async (fips: string) => {
+      previewRequest.current?.abort();
+      const controller = new AbortController();
+      previewRequest.current = controller;
+      setPreview({ kind: "loading" });
+      try {
+        const result = await fetchPreview(fips, modeRef.current, controller.signal);
+        if (!controller.signal.aborted) setPreview({ kind: "loaded", preview: result });
+      } catch (error) {
+        if (controller.signal.aborted) return;
+        setPreview({ kind: "error", message: errorMessage(error) });
+      }
+    },
+    [fetchPreview],
   );
 
   const openState = useCallback(
@@ -80,20 +105,27 @@ export function App({ config }: { config: AppConfig }) {
       const next = fips === null ? null : (states.find((s) => s.properties.fips === fips) ?? null);
       openFips.current = next?.properties.fips ?? null;
       setState(next);
-      if (!next) return;
-
-      const controller = new AbortController();
-      previewRequest.current = controller;
-      setPreview({ kind: "loading" });
-      try {
-        const result = await fetchPreview(next.properties.fips, controller.signal);
-        if (!controller.signal.aborted) setPreview({ kind: "loaded", preview: result });
-      } catch (error) {
-        if (controller.signal.aborted) return;
-        setPreview({ kind: "error", message: errorMessage(error) });
-      }
+      if (next) await loadPreview(next.properties.fips);
     },
-    [fetchPreview, states],
+    [loadPreview, states],
+  );
+
+  /**
+   * Switches between live and historical (or to another day). The open state
+   * and tile stay open and reload in the new mode, so the same place can be
+   * compared across modes. The mode is kept in the URL for sharing.
+   */
+  const changeMode = useCallback(
+    (next: MapMode) => {
+      if (sameMode(next, modeRef.current)) return;
+      modeRef.current = next;
+      setMode(next);
+      const { pathname, hash, search } = window.location;
+      window.history.replaceState(null, "", `${pathname}${modeToSearch(next, search)}${hash}`);
+      if (openFips.current) void loadPreview(openFips.current);
+      if (lastPoint.current) void select(lastPoint.current);
+    },
+    [loadPreview, select],
   );
 
   /**
@@ -143,9 +175,20 @@ export function App({ config }: { config: AppConfig }) {
   }, [openState]);
 
   const tile = selection.kind === "loaded" ? selection.tile : null;
+  const historical = mode.kind === "historical";
+  const overlay: LegendOverlay =
+    tile === null
+      ? null
+      : historical
+        ? (tile.perimeters?.features.length ?? 0) > 0
+          ? "perimeters"
+          : null
+        : showSpread && (tile.spread?.features.length ?? 0) > 0
+          ? "spread"
+          : null;
 
   return (
-    <div className="app">
+    <div className="app" data-mode={mode.kind}>
       <MapView
         styleUrl={config.mapStyleUrl}
         terrain={config.terrain}
@@ -153,6 +196,8 @@ export function App({ config }: { config: AppConfig }) {
         selectedState={state}
         preview={state && preview.kind === "loaded" ? preview.preview : null}
         tile={tile}
+        mode={mode}
+        showSpread={showSpread}
         userLocation={userLocation}
         onSelectState={(fips) => void openState(fips)}
         onClearState={() => void openState(null)}
@@ -163,10 +208,14 @@ export function App({ config }: { config: AppConfig }) {
           ← US map
         </button>
       )}
+      <div className={`mode-banner ${mode.kind}`} role="status">
+        {modeLabel(mode)}
+      </div>
       <aside className="panel">
         <h1>
           Pyro {config.useMock && <span className="badge">mock data</span>}
         </h1>
+        <ModeSwitch mode={mode} now={new Date()} onChange={changeMode} />
         {state ? (
           <>
             <StatePanel
@@ -177,7 +226,13 @@ export function App({ config }: { config: AppConfig }) {
               onJumpTo={(point) => void select(point)}
             />
             {selection.kind !== "idle" && (
-              <TilePanel selection={selection} onRetry={retryTile} />
+              <TilePanel
+                selection={selection}
+                mode={mode}
+                showSpread={showSpread}
+                onToggleSpread={setShowSpread}
+                onRetry={retryTile}
+              />
             )}
           </>
         ) : (
@@ -187,10 +242,15 @@ export function App({ config }: { config: AppConfig }) {
           </p>
         )}
         <LocationControl status={locationStatus} onLocate={() => void locateUser(false)} />
-        <Legend terrain={tile !== null && config.terrain !== null} />
+        <Legend
+          terrain={tile !== null && config.terrain !== null}
+          overlay={overlay}
+          historical={historical}
+        />
         <footer>
           Data: NASA FIRMS (fire detections), Open-Meteo (weather), LANDFIRE
           (fuels and terrain). State outlines: US Census Bureau.
+          {historical && " Perimeters: Mendeley daily perimeter dataset (CC BY 4.0)."}
           {config.terrain && <> {config.terrain.attribution}.</>}
         </footer>
       </aside>

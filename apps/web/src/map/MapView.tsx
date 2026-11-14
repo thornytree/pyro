@@ -19,7 +19,9 @@ import type { TerrainConfig } from "../config";
 import { ageHours } from "../lib/age";
 import { CONUS_BOUNDS } from "../lib/conus";
 import { geometryBounds, maskOutside, scaleGeometry } from "../lib/geo";
+import { type MapMode, referenceTime } from "../lib/mode";
 import { metresPerPixel } from "../lib/scale";
+import { spreadArrow } from "../lib/spread";
 import { stateAt as stateContaining, type StateFeature } from "../lib/states";
 import { resolveClick, resolveZoom } from "./interaction";
 import {
@@ -32,10 +34,14 @@ import {
   LIFT_SCALE,
   LIFT_SOURCE,
   MASK_SOURCE,
+  PERIMETER_SOURCE,
   PREVIEW_FILL_LAYER,
   PREVIEW_OPACITY,
   PREVIEW_SOURCE,
   SELECTED_SOURCE,
+  SPREAD_ARROW_SOURCE,
+  SPREAD_LAYER_IDS,
+  SPREAD_SOURCE,
   STATES_FILL_LAYER,
   STATES_SOURCE,
   TILE_SOURCE,
@@ -54,7 +60,15 @@ import {
 setWorkerUrl(workerUrl);
 
 const EMPTY: FeatureCollection = { type: "FeatureCollection", features: [] };
-const DATA_SOURCES = [CELLS_SOURCE, TILE_SOURCE, DETECTIONS_SOURCE, PREVIEW_SOURCE];
+const TILE_SOURCES = [
+  CELLS_SOURCE,
+  TILE_SOURCE,
+  DETECTIONS_SOURCE,
+  SPREAD_SOURCE,
+  SPREAD_ARROW_SOURCE,
+  PERIMETER_SOURCE,
+];
+const DATA_SOURCES = [...TILE_SOURCES, PREVIEW_SOURCE];
 const NATIONAL_PADDING = 24;
 const STATE_MAX_ZOOM = 8;
 const TILE_MAX_ZOOM = 9;
@@ -75,6 +89,10 @@ interface Props {
   selectedState: StateFeature | null;
   preview: StatePreview | null;
   tile: TileResponse | null;
+  /** The mode `tile` was loaded in; sets the time detections are aged from. */
+  mode: MapMode;
+  /** Draw the predicted spread outlines (live tiles only). */
+  showSpread: boolean;
   userLocation: LatLong | null;
   onSelectState: (fips: string) => void;
   onClearState: () => void;
@@ -118,8 +136,10 @@ function point({ lat, long }: LatLong): FeatureCollection {
 
 /** Keeps the side panel from covering the area being framed. */
 function framePadding(map: MapLibreMap) {
-  const narrow = map.getContainer().clientWidth < 600;
-  return narrow ? 24 : { top: 40, bottom: 40, right: 60, left: 380 };
+  const { clientWidth, clientHeight } = map.getContainer();
+  // Phones: the HUD and mode banner take the top, the panel up to 45% of the bottom (styles.css).
+  if (clientWidth < 600) return { top: 130, bottom: clientHeight * 0.45 + 32, left: 24, right: 24 };
+  return { top: 40, bottom: 40, right: 60, left: 380 };
 }
 
 /**
@@ -159,6 +179,8 @@ export function MapView({
   selectedState,
   preview,
   tile,
+  mode,
+  showSpread,
   userLocation,
   onSelectState,
   onClearState,
@@ -403,12 +425,15 @@ export function MapView({
       uncertaintyOpacity("meanUncertainty", PREVIEW_OPACITY[opacity]),
     );
     if (!tile) {
-      for (const id of [CELLS_SOURCE, TILE_SOURCE, DETECTIONS_SOURCE]) set(id, EMPTY);
+      for (const id of TILE_SOURCES) set(id, EMPTY);
       return;
     }
-    const now = new Date();
+    const now = referenceTime(mode, new Date());
     set(CELLS_SOURCE, tile.cells);
     set(TILE_SOURCE, rectangle(tile.bounds));
+    set(SPREAD_SOURCE, tile.spread ?? EMPTY);
+    set(SPREAD_ARROW_SOURCE, tile.spread ? spreadArrow(tile.spread) : EMPTY);
+    set(PERIMETER_SOURCE, tile.perimeters ?? EMPTY);
     set(DETECTIONS_SOURCE, {
       type: "FeatureCollection",
       features: tile.detections.features.map((feature) => ({
@@ -425,7 +450,15 @@ export function MapView({
       { padding: framePadding(map), maxZoom: TILE_MAX_ZOOM },
       AUTO,
     );
-  }, [tile, ready]);
+  }, [tile, mode, ready]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !ready) return;
+    for (const id of SPREAD_LAYER_IDS) {
+      if (map.getLayer(id)) map.setLayoutProperty(id, "visibility", showSpread ? "visible" : "none");
+    }
+  }, [showSpread, ready]);
 
   useEffect(() => {
     if (!ready) return;

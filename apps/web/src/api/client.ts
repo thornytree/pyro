@@ -5,6 +5,7 @@ import type {
   TileFetcher,
   TileResponse,
 } from "./types";
+import type { MapMode } from "../lib/mode";
 
 export class ApiError extends Error {
   constructor(
@@ -26,7 +27,10 @@ function isTileResponse(value: unknown): value is TileResponse {
     v.bounds.length === 4 &&
     v.bounds.every((n) => typeof n === "number") &&
     isFeatureCollection(v.cells) &&
-    isFeatureCollection(v.detections)
+    isFeatureCollection(v.detections) &&
+    (v.spread === undefined || isFeatureCollection(v.spread)) &&
+    (v.perimeters === undefined || isFeatureCollection(v.perimeters)) &&
+    (v.drivers === undefined || v.drivers === null || typeof v.drivers === "object")
   );
 }
 
@@ -36,14 +40,23 @@ function isFeatureCollection(value: unknown): boolean {
   return v.type === "FeatureCollection" && Array.isArray(v.features);
 }
 
-/** Tile lookup against apps/orchestrator: GET {baseUrl}/tiles?lat=&long= */
+/** Historical routes live under /history and are read-only on the orchestrator. */
+const routePrefix = (mode: MapMode) => (mode.kind === "historical" ? "/history" : "");
+const dateQuery = (mode: MapMode): Record<string, string> =>
+  mode.kind === "historical" ? { date: mode.date } : {};
+
+/**
+ * Tile lookup against apps/orchestrator.
+ * Live: GET {baseUrl}/tiles?lat=&long=
+ * Historical: GET {baseUrl}/history/tiles?lat=&long=&date=YYYY-MM-DD
+ */
 export function createTileFetcher(
   baseUrl: string,
   fetchImpl: typeof fetch = fetch,
 ): TileFetcher {
-  return async ({ lat, long }: LatLong, signal?: AbortSignal) => {
-    const query = new URLSearchParams({ lat: String(lat), long: String(long) });
-    const response = await fetchImpl(`${baseUrl}/tiles?${query}`, { signal });
+  return async ({ lat, long }: LatLong, mode: MapMode, signal?: AbortSignal) => {
+    const query = new URLSearchParams({ lat: String(lat), long: String(long), ...dateQuery(mode) });
+    const response = await fetchImpl(`${baseUrl}${routePrefix(mode)}/tiles?${query}`, { signal });
     if (!response.ok) {
       throw new ApiError(
         `Orchestrator returned ${response.status}`,
@@ -68,14 +81,19 @@ function isStatePreview(value: unknown): value is StatePreview {
   );
 }
 
-/** State overview against apps/orchestrator: GET {baseUrl}/states/{fips}/preview */
+/**
+ * State overview against apps/orchestrator.
+ * Live: GET {baseUrl}/states/{fips}/preview
+ * Historical: GET {baseUrl}/history/states/{fips}/preview?date=YYYY-MM-DD
+ */
 export function createStatePreviewFetcher(
   baseUrl: string,
   fetchImpl: typeof fetch = fetch,
 ): StatePreviewFetcher {
-  return async (stateId: string, signal?: AbortSignal) => {
+  return async (stateId: string, mode: MapMode, signal?: AbortSignal) => {
+    const query = new URLSearchParams(dateQuery(mode)).toString();
     const response = await fetchImpl(
-      `${baseUrl}/states/${encodeURIComponent(stateId)}/preview`,
+      `${baseUrl}${routePrefix(mode)}/states/${encodeURIComponent(stateId)}/preview${query ? `?${query}` : ""}`,
       { signal },
     );
     if (!response.ok) {

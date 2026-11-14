@@ -24,6 +24,8 @@
 - **Statewide preview contract.** `GET /states/{fips}/preview` returning one value per 50 km tile in a state. Web side only, and it conflicts with decision 2 as written (inactive tiles have no model output); see `apps/web/README.md`.
 - **Tile grid projection and IDs.** 50 km tiles in EPSG:5070, a 95 x 59 grid, IDs like `r40c80`. Implemented as a working choice in `apps/inference/shared/grid.py` during the FIRMS harmonization; the team has not agreed it, and the web mock does not use it yet.
 - **Harmonized FIRMS schema.** One schema for all five sensors, with a 0/1/2 confidence class (MODIS keeps its 0 to 100 value separately) and non-fire detections kept but flagged. See `firms-harmonization.md`.
+- **Historical routes.** `GET /history/tiles?lat=&long=&date=` and `GET /history/states/{fips}/preview?date=`, same shapes as live, read-only so a replay never activates a tile. Web side only; see `apps/web/README.md`.
+- **Spread in the live tile.** Optional `spread` (outlines at 6, 12 and 24 h around cells at 80% or more, with heading, rate and reach) and `drivers` (the weather used). Goes beyond decision 3, which limits spread to a proof of concept where perimeters exist; on the web it is labelled experimental and runs on a mock formula. See `apps/web/README.md`.
 - **Terrain under the tile view.** Elevation tint, hillshade and contours from a configurable DEM source (`VITE_TERRAIN_*`); map rotation and pitch disabled so north stays up. Built in `apps/web`, not reviewed by the team.
 
 ## Design for decision 2
