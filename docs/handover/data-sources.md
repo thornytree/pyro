@@ -10,9 +10,10 @@ Decision date: 2026-11-14. Facts below were read from each provider's page on th
 | NASA FIRMS Archive | Historical detections for training | Core |
 | Open-Meteo | Weather covariates, live and historical | Core |
 | LANDFIRE | Static fuels, vegetation, terrain | Core |
+| NIFC / WFIGS | Confirmed-wildfire labels | Core for training (team decision, 2026-11-14; details unverified) |
 | Mendeley daily fire perimeters | Validation for the spread model | Later |
 | NCEI CDO v2 | Station weather | Dropped |
-| Daymet | Historical gridded weather | Dropped |
+| Daymet | Historical gridded weather | Training only (team decision, 2026-11-14) |
 | USGS National Map | Elevation | Dropped (redundant) |
 
 ## Core
@@ -57,6 +58,15 @@ Decision date: 2026-11-14. Facts below were read from each provider's page on th
 - Use: download once, resample to our grid, cache. It is static between annual updates.
 - Unverified: pixel size (expected 30 m from memory)
 
+## Training only
+
+### Daymet
+
+- URL: https://daymet.ornl.gov/getdata
+- 1 km daily gridded surface weather, hosted by NASA's ORNL DAAC (a second NASA dataset). Access by REST web service, single-pixel tool, or THREDDS tiles.
+- Decision (2026-11-14): used for training only, not in the real-time bundle. It is expected to be released on an annual cycle (from memory, not confirmed on the page), so it has no data for the current day.
+- Risk: a feature the model sees only in training cannot be used at inference. Daymet variables must map onto the same variables from Open-Meteo at serve time (temperature, precipitation, vapour pressure), and the two products will not agree exactly. Check the mismatch on an overlapping period before relying on it.
+
 ## Later
 
 ### Mendeley daily fire perimeter progression (2020 to 2024)
@@ -73,14 +83,14 @@ Decision date: 2026-11-14. Facts below were read from each provider's page on th
 
 Station-based summaries (daily, monthly, yearly), not a grid. Token limited to 5 requests per second and 10,000 per day. Open-Meteo already gives gridded versions of the same variables.
 
-### Daymet
-
-1 km daily gridded weather with REST and THREDDS access, but released on an annual cycle (from memory, not confirmed on the page), so it cannot feed live inference and would make training features differ from serving features. It is hosted by NASA's ORNL DAAC, so it remains an option if a second NASA dataset helps with judging.
-
 ### USGS National Map
 
 Useful part is 3DEP elevation. LANDFIRE ships elevation, slope and aspect already aligned with its fuel layers, so this adds work without adding information.
 
-## Not in the original list but needed
+## Labels
 
-A confirmed-wildfire label source. FIRMS reports thermal anomalies, which include gas flares, agricultural burns and industrial heat. Candidate: NIFC / WFIGS incident locations and perimeters. Not yet evaluated.
+### NIFC / WFIGS
+
+- Decision (2026-11-14): label source for confirmed wildfires. FIRMS reports thermal anomalies, which include gas flares, agricultural burns and industrial heat, so it cannot label itself.
+- Use: incident locations and perimeters, rasterized to grid cells as training labels. Perimeters may also feed the live spread view.
+- Unverified: endpoints, field names, history depth, update cadence and licence. Nothing has been read from the provider's pages yet. Confirm before building the fetcher.

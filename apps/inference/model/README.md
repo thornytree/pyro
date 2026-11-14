@@ -6,4 +6,4 @@ Work item 3: training and inference.
 - `inference/`: runs the fitted model on the real-time bundle.
 
 Target outputs: burn probability, spread direction, rate of spread, perimeter.
-Proposed structure: `docs/handover/model-outline.md` (not yet agreed).
+Structure: `docs/handover/model-outline.md` (latent fire state with per-sensor likelihoods, agreed 2026-11-14).

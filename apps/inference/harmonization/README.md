@@ -13,6 +13,6 @@ Work item 2: builds the harmonized data bundle.
 
 ## Open questions
 
-- Grid cell size, projection, time step.
+- Model cell size inside the 50 km tile, projection, time step.
 - Bundle format (schema lives in `shared/`).
 - Behaviour when one source fails or times out.
