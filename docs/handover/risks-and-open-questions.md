@@ -23,7 +23,7 @@ Last updated: 2026-11-14
 
 These came from memory or were not on the pages read. Confirm before building on them.
 
-- FIRMS CSV column names per sensor (`confidence`, `frp`, brightness fields)
+- FIRMS Area API column names per sensor. The archive CSVs are now verified (see `apps/inference/sources/firms/README.md`); the API has not been called.
 - Open-Meteo free-tier daily call cap and licence wording
 - LANDFIRE pixel size (expected 30 m)
 - Daymet release cadence (expected annual)
