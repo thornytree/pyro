@@ -132,7 +132,7 @@ export function App({ config }: { config: AppConfig }) {
         <Legend terrain={tile !== null && config.terrain !== null} />
         <footer>
           Data: NASA FIRMS (fire detections), Open-Meteo (weather), LANDFIRE
-          (fuels and terrain). State outlines: US Census Bureau.
+          (fuels and vegetation), USGS 3DEP (terrain). State outlines: US Census Bureau.
           {config.terrain && <> {config.terrain.attribution}.</>}
         </footer>
       </aside>

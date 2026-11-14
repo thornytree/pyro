@@ -1,19 +1,18 @@
-import express from "express";
+import { createApp } from "./app.ts";
+import { loadEnvironment, readConfig } from "./config.ts";
 
-const app = express();
-const port = Number(process.env.PORT ?? 3001);
-
-app.get("/", (_req, res) => {
-  res.send("Hello world!");
-
-});
-
-app.get("/inference", (_req, res) => {
-  res.send("Hello world!");
-  // parse request
-  // send to orchestrator
-});
-
-app.listen(port, () => {
-  console.log(`Orchestrator listening on http://localhost:${port}`);
-});
+try {
+  loadEnvironment();
+  const config = readConfig();
+  const server = createApp(config).listen(config.port, config.host, () => {
+    console.log(`Orchestrator listening on http://${config.host}:${config.port}`);
+    console.log("Required source credentials are configured. Health: GET /health; data: GET /tiles?lat=34.05&long=-118.25");
+  });
+  server.on("error", error => {
+    console.error(`Could not start orchestrator (${error.name}). Check HOST, PORT and whether the port is in use.`);
+    process.exitCode = 1;
+  });
+} catch (error) {
+  console.error(error instanceof Error ? error.message : "Server initialization failed.");
+  process.exitCode = 1;
+}

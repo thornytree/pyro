@@ -16,7 +16,7 @@ interface Props {
 export function TilePanel({ selection, onRetry }: Props) {
   switch (selection.kind) {
     case "idle":
-      return <p>Click an area in the state to load its 50 km tile.</p>;
+      return <p>Click an area in the state to load its surrounding region.</p>;
     case "loading":
       return <p>Loading tile…</p>;
     case "outside":
@@ -42,6 +42,15 @@ function TileSummary({ tile, onRetry }: { tile: TileResponse; onRetry: () => voi
           the next scheduled run.
         </p>
         <button onClick={onRetry}>Check again</button>
+      </>
+    );
+  }
+
+  if (tile.status === "observed") {
+    return (
+      <>
+        <p>Source data loaded for the selected 300-square-mile region. Spread predictions are not available yet.</p>
+        <p>Satellite detections: {tile.detections.features.length}</p>
       </>
     );
   }

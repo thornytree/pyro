@@ -3,7 +3,7 @@
 // EPSG:4326 so the web app does not depend on the model grid's projection.
 import type { FeatureCollection, Point, Polygon } from "geojson";
 
-export type TileStatus = "ready" | "queued";
+export type TileStatus = "ready" | "queued" | "observed";
 
 export type FirmsSource =
   | "MODIS"
@@ -25,6 +25,8 @@ export interface DetectionProperties {
   acquiredAt: string;
   /** Unified 0 to 1 scale; null when the sensor reports none. */
   confidence: number | null;
+  /** VIIRS categorical confidence is preserved without inventing a probability. */
+  confidenceCategory?: "low" | "nominal" | "high" | null;
   /** Fire radiative power in MW. */
   frpMw: number | null;
 }
@@ -33,9 +35,9 @@ export type CellCollection = FeatureCollection<Polygon, CellProperties>;
 export type DetectionCollection = FeatureCollection<Point, DetectionProperties>;
 
 export interface TileResponse {
-  /** Shareable ID of the 50 km tile containing the requested point. */
+  /** Opaque region ID. Live regions cover 300 square miles around the requested point. */
   tileId: string;
-  /** "queued": the tile was just activated and has no model output yet. */
+  /** "observed": source data loaded, no model output. "queued": actual pending model work. */
   status: TileStatus;
   /** [west, south, east, north] in degrees. */
   bounds: [number, number, number, number];

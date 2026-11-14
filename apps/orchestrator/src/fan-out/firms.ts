@@ -1,6 +1,7 @@
 
 import { parse } from "csv-parse/sync";
-import type { BoundingBox, dataBundle, FireDetection, FirmsSource } from "./types.ts";
+import { createRegionBounds } from "./region.ts";
+import type { dataBundle, FireDetection, FirmsSource } from "./types.ts";
 
 // CSV parsers usually return strings; numeric fields may already be parsed by callers.
 export type FirmsRow = {
@@ -96,33 +97,8 @@ export function normalizeFireAttributes(datasets: FirmsDataset[]): FireAttribute
   return { fire: { detections } };
 }
 
-/** Center a 300-square-mile box on a point, accounting for longitude convergence. */
-export function createFireBounds(lat: number, long: number): BoundingBox {
-  numeric(lat, "latitude", -90, 90);
-  numeric(long, "longitude", -180, 180);
-  const earthRadiusKm = 6371.0088;
-  const areaKm2 = 300 * 1.609344 ** 2;
-  const halfLatitude = Math.sqrt(areaKm2) / (2 * earthRadiusKm);
-  const latitude = lat * Math.PI / 180;
-  if (Math.abs(latitude) + halfLatitude >= Math.PI / 2) {
-    throw new Error("The FIRMS search box cannot cross a pole.");
-  }
-  // Spherical rectangle area = R² * longitude span * (sin(north) - sin(south)).
-  const halfLongitude = areaKm2 /
-    (4 * earthRadiusKm ** 2 * Math.cos(latitude) * Math.sin(halfLatitude));
-  const latitudeOffset = halfLatitude * 180 / Math.PI;
-  const longitudeOffset = halfLongitude * 180 / Math.PI;
-  const bounds = {
-    west: long - longitudeOffset,
-    south: lat - latitudeOffset,
-    east: long + longitudeOffset,
-    north: lat + latitudeOffset,
-  };
-  if (bounds.west < -180 || bounds.east > 180) {
-    throw new Error("The FIRMS search box cannot cross the antimeridian.");
-  }
-  return bounds;
-}
+// Backward-compatible name; all sources use the same region.
+export { createRegionBounds as createFireBounds } from "./region.ts";
 
 /** Fetch all four FIRMS feeds concurrently; any failed feed fails this operation. */
 export async function getFireAttributes(
@@ -130,7 +106,7 @@ export async function getFireAttributes(
   long: number,
   options: { days?: number; mapKey?: string } = {},
 ): Promise<FireAttributes> {
-  const { west, south, east, north } = createFireBounds(lat, long);
+  const { west, south, east, north } = createRegionBounds(lat, long);
   const days = options.days ?? 1;
   if (!Number.isInteger(days) || days < 1 || days > 5) {
     throw new Error("FIRMS day range must be an integer between 1 and 5.");

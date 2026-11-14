@@ -1,12 +1,17 @@
 # sources/topography
 
-Work item 2: terrain and elevation.
+Terrain retrieval is implemented in
+[`apps/orchestrator/src/fan-out/terrain.ts`](../../../orchestrator/src/fan-out/terrain.ts).
 
-- **Provider:** LANDFIRE (elevation, slope, aspect), EPSG:5070 for CONUS.
-- **Input:** region of interest.
-- **Output:** elevation, slope, aspect per grid cell.
+- Provider: USGS 3DEP raw elevation ImageServer.
+- Input: selected latitude/longitude; shared centered 300-square-mile region.
+- Output: elevation (metres), derived slope (degrees), downhill aspect (degrees),
+  sampled onto the common grid. Missing values and undefined flat aspects are null.
+- Derivatives use a roughly 30 m DEM with boundary padding and metric distances.
+- Static downloads use a bounded in-memory cache for 24 hours.
 
-## Notes
-
-- Terrain does not change. Download once, resample to the project grid, cache, and serve lookups from the cache. Do not call a remote service per request.
-- Open question: add LANDFIRE fuel and canopy layers here. They come from the same download and matter a lot for spread.
+Fuels, vegetation and canopy retrieval is implemented separately in
+[`landfire.ts`](../../../orchestrator/src/fan-out/landfire.ts), using six raw
+LANDFIRE ImageServer layers. See the fan-out README for versions, units, sampling
+limitations, cache behavior and live validation status. The Python inference service
+receives normalized JSON rather than retrieving these source rasters itself.

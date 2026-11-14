@@ -10,6 +10,7 @@ dist/
 # data and model artifacts
 data/
 *.nc
+!apps/orchestrator/tests/fixtures/daymet-small.nc
 *.tif
 *.pt
 

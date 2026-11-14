@@ -23,6 +23,11 @@ describe("createTileFetcher", () => {
     expect(url.searchParams.get("long")).toBe("-121.5");
   });
 
+  it("accepts observed data before predictions are connected", async () => {
+    const observed = { ...tile, status: "observed", updatedAt: null, cells: { type: "FeatureCollection", features: [] } };
+    await expect(createTileFetcher("http://api.test", fetchReturning(observed))(point)).resolves.toEqual(observed);
+  });
+
   it("passes the abort signal through", async () => {
     const fetchImpl = fetchReturning(tile);
     const controller = new AbortController();

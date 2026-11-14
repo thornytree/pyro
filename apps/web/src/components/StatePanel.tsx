@@ -69,8 +69,9 @@ function Summary({
         </button>
       )}
       <p className="hint">
-        Each square is one 50 km tile, coloured by its highest cell. Click an area
-        to load that tile at full resolution.
+        {summary.tileCount === 0
+          ? "No statewide model output is available yet. Click an area to load its source data."
+          : "Each square summarizes model output for a tile. Click an area to load the surrounding region."}
       </p>
     </>
   );
