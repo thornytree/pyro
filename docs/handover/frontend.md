@@ -11,20 +11,22 @@ The map site lives in `apps/web` (React, Vite, MapLibre GL JS). It runs on gener
 | `b297267` | First cut of the map on mock data: MapLibre map, tile panel, legend, orchestrator client and mock tile generator. |
 | `3bdb9c5` | State hover, statewide preview and tile drill-down. |
 | `19bcc10` | Terrain under the tile view, fixed compass and scale bar. |
+| `cf9a4b2` | Browser location opens the user's state, zoom-driven focus and unfocus, "← US map" return button. |
 
 ## Features
 
 ### National view
 - All CONUS states outlined (Census Bureau 1:10m via `us-atlas`; Alaska, Hawaii and territories left out, per decision 7).
 - Hovering a state lifts it: it grows 8% about its centre with a drop shadow. The lift is instant if the user prefers reduced motion.
-- Clicking a state opens it.
+- Clicking a state opens it. So does zooming in one level past the national framing (the hovered state, or the one at the centre of the view).
+- On load the browser asks for the user's location. If allowed and inside a CONUS state, that state opens and a blue dot marks the user. "Use my location" asks again. Only the state opens, not the tile, since loading a tile activates it.
 
 ### State view
 - The map frames the state and dims everything outside it.
 - Coarse preview: one square per 50 km tile, coloured by that tile's highest cell. Squares with no model output are grey.
 - Hovering outlines the tile a click would load.
 - "Open the highest-risk tile" jumps straight to the hottest one.
-- Clicking a neighbouring state switches to it. "All states" or Esc goes back.
+- Clicking a neighbouring state switches to it. "All states", the "← US map" button on the map, Esc, or zooming out one level past the state's framing goes back.
 
 ### Tile view (live heat map)
 - Full-resolution cells coloured by fire probability (magma-style ramp). Cells get fainter as uncertainty rises.
