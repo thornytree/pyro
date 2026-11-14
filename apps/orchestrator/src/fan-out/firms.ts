@@ -1,6 +1,7 @@
 
 import { parse } from "csv-parse/sync";
-import type { BoundingBox, dataBundle, FireDetection, FirmsSource } from "./types.ts";
+import { frameBounds, tileIdAt } from "./grid.ts";
+import type { FireDetection, FirmsSource, NationalDetections } from "./types.ts";
 
 // CSV parsers usually return strings; numeric fields may already be parsed by callers.
 export type FirmsRow = {
@@ -10,20 +11,23 @@ export type FirmsRow = {
   acq_time: string | number;
   satellite: string;
   confidence: string | number;
-  frp: string | number;
+  frp?: string | number; // absent from Landsat
   scan: string | number;
   track: string | number;
 };
 
 export type FirmsDataset = { source: FirmsSource; rows: FirmsRow[] };
-type FireAttributes = Pick<dataBundle, "fire">;
+type FireAttributes = { fire: { detections: FireDetection[] } };
 
-const sources: FirmsSource[] = [
-  "MODIS_NRT", "VIIRS_SNPP_NRT", "VIIRS_NOAA20_NRT", "VIIRS_NOAA21_NRT",
+export const sources: FirmsSource[] = [
+  "MODIS_NRT", "VIIRS_SNPP_NRT", "VIIRS_NOAA20_NRT", "VIIRS_NOAA21_NRT", "LANDSAT_NRT",
 ];
-const requiredColumns = [
-  "latitude", "longitude", "acq_date", "acq_time", "satellite", "confidence", "frp", "scan", "track",
-];
+const baseColumns = ["latitude", "longitude", "acq_date", "acq_time", "satellite", "confidence", "scan", "track"];
+function requiredColumns(source: FirmsSource): string[] {
+  return source === "LANDSAT_NRT" ? baseColumns : [...baseColumns, "frp"];
+}
+// Landsat's scan/track columns are pixel positions in the scene, not sizes.
+const LANDSAT_PIXEL_KM = 0.03;
 
 function numeric(value: string | number, field: string, min: number, max = Infinity): number {
   const number = typeof value === "number" ? value : Number(value?.trim());
@@ -48,7 +52,7 @@ function acquisitionTime(date: string, time: string | number): string {
   return iso;
 }
 
-/** Convert already-parsed MODIS/VIIRS rows into the fire portion of a bundle. */
+/** Convert already-parsed FIRMS rows into detections, each tagged with its tile. */
 export function normalizeFireAttributes(datasets: FirmsDataset[]): FireAttributes {
   const detections: FireDetection[] = [];
   const seen = new Set<string>();
@@ -56,7 +60,7 @@ export function normalizeFireAttributes(datasets: FirmsDataset[]): FireAttribute
   for (const { source, rows } of datasets) {
     if (!sources.includes(source)) throw new Error("Unsupported FIRMS source.");
     for (const row of rows) {
-      const instrument = source === "MODIS_NRT" ? "MODIS" : "VIIRS";
+      const instrument = source === "MODIS_NRT" ? "MODIS" : source === "LANDSAT_NRT" ? "OLI" : "VIIRS";
       let confidence: FireDetection["confidence"];
       if (instrument === "MODIS") {
         confidence = { kind: "percent", value: numeric(row.confidence, "confidence", 0, 100) };
@@ -70,18 +74,19 @@ export function normalizeFireAttributes(datasets: FirmsDataset[]): FireAttribute
         confidence = { kind: "category", value };
       }
       if (!row.satellite?.trim()) throw new Error("Missing FIRMS satellite.");
+      const isLandsat = instrument === "OLI";
+      const latitude = numeric(row.latitude, "latitude", -90, 90);
+      const longitude = numeric(row.longitude, "longitude", -180, 180);
       const detection: FireDetection = {
         source,
         instrument,
         satellite: row.satellite.trim(),
-        location: {
-          latitude: numeric(row.latitude, "latitude", -90, 90),
-          longitude: numeric(row.longitude, "longitude", -180, 180),
-        },
+        location: { latitude, longitude },
+        tile_id: tileIdAt(latitude, longitude),
         observation_time: acquisitionTime(row.acq_date, row.acq_time),
-        frp_mw: numeric(row.frp, "FRP", 0),
-        scan_km: numeric(row.scan, "scan", 0),
-        track_km: numeric(row.track, "track", 0),
+        frp_mw: isLandsat ? null : numeric(row.frp ?? "", "FRP", 0),
+        scan_km: isLandsat ? LANDSAT_PIXEL_KM : numeric(row.scan, "scan", 0),
+        track_km: isLandsat ? LANDSAT_PIXEL_KM : numeric(row.track, "track", 0),
         confidence,
       };
       // Remove exact repeats, preserving separate satellite passes and sensors.
@@ -96,53 +101,33 @@ export function normalizeFireAttributes(datasets: FirmsDataset[]): FireAttribute
   return { fire: { detections } };
 }
 
-/** Center a 300-square-mile box on a point, accounting for longitude convergence. */
-export function createFireBounds(lat: number, long: number): BoundingBox {
-  numeric(lat, "latitude", -90, 90);
-  numeric(long, "longitude", -180, 180);
-  const earthRadiusKm = 6371.0088;
-  const areaKm2 = 300 * 1.609344 ** 2;
-  const halfLatitude = Math.sqrt(areaKm2) / (2 * earthRadiusKm);
-  const latitude = lat * Math.PI / 180;
-  if (Math.abs(latitude) + halfLatitude >= Math.PI / 2) {
-    throw new Error("The FIRMS search box cannot cross a pole.");
-  }
-  // Spherical rectangle area = R² * longitude span * (sin(north) - sin(south)).
-  const halfLongitude = areaKm2 /
-    (4 * earthRadiusKm ** 2 * Math.cos(latitude) * Math.sin(halfLatitude));
-  const latitudeOffset = halfLatitude * 180 / Math.PI;
-  const longitudeOffset = halfLongitude * 180 / Math.PI;
-  const bounds = {
-    west: long - longitudeOffset,
-    south: lat - latitudeOffset,
-    east: long + longitudeOffset,
-    north: lat + latitudeOffset,
-  };
-  if (bounds.west < -180 || bounds.east > 180) {
-    throw new Error("The FIRMS search box cannot cross the antimeridian.");
-  }
-  return bounds;
-}
+// The whole CONUS tile frame. FIRMS takes one bounding box per request, so a
+// nationwide poll is one request per sensor (decision 2 in docs/handover/decisions.md).
+export const CONUS_FRAME = frameBounds();
 
-/** Fetch all four FIRMS feeds concurrently; any failed feed fails this operation. */
-export async function getFireAttributes(
-  lat: number,
-  long: number,
+/**
+ * Fetch every FIRMS feed for the whole CONUS frame concurrently; any failed
+ * feed fails the poll so a partial snapshot never replaces a complete one.
+ * Detections outside the tile frame (Canada, Mexico, ocean) are dropped.
+ * Each day in the range counts as one transaction against the MAP_KEY's 5,000
+ * per 10 minutes, so a 2-day poll of five feeds costs about 10.
+ */
+export async function fetchFirmsNationwide(
   options: { days?: number; mapKey?: string } = {},
-): Promise<FireAttributes> {
-  const { west, south, east, north } = createFireBounds(lat, long);
-  const days = options.days ?? 1;
+): Promise<NationalDetections> {
+  const { west, south, east, north } = CONUS_FRAME;
+  const days = options.days ?? 2;
   if (!Number.isInteger(days) || days < 1 || days > 5) {
     throw new Error("FIRMS day range must be an integer between 1 and 5.");
   }
   const mapKey = options.mapKey ?? process.env.FIRMS_MAP_KEY;
   if (!mapKey?.trim()) throw new Error("FIRMS_MAP_KEY is required.");
-
+  const fetchedAt = new Date().toISOString();
   const datasets = await Promise.all(sources.map(async (source): Promise<FirmsDataset> => {
     const url = `https://firms.modaps.eosdis.nasa.gov/api/area/csv/${encodeURIComponent(mapKey)}/${source}/${west},${south},${east},${north}/${days}`;
     let response: Response;
     try {
-      response = await fetch(url, { signal: AbortSignal.timeout(30_000) });
+      response = await fetch(url, { signal: AbortSignal.timeout(60_000) });
     } catch {
       // Do not expose the request URL, which contains the MAP_KEY.
       throw new Error(`FIRMS ${source} request failed or timed out.`);
@@ -152,12 +137,13 @@ export async function getFireAttributes(
     try {
       const csv = await response.text();
       if (!csv.trim()) throw new Error("Empty FIRMS response.");
+      const required = requiredColumns(source);
       rows = parse(csv, {
         bom: true,
         skip_empty_lines: true,
         trim: true,
         columns: (headers: string[]) => {
-          if (!requiredColumns.every(column => headers.includes(column))) {
+          if (!required.every(column => headers.includes(column))) {
             throw new Error("Missing FIRMS columns.");
           }
           return headers;
@@ -169,5 +155,10 @@ export async function getFireAttributes(
     // A valid header-only CSV means no detections.
     return { source, rows };
   }));
-  return normalizeFireAttributes(datasets);
+  const { fire } = normalizeFireAttributes(datasets);
+  return {
+    fetched_at: fetchedAt,
+    days,
+    detections: fire.detections.filter(detection => detection.tile_id !== null),
+  };
 }

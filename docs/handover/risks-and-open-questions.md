@@ -1,6 +1,6 @@
 # Risks and open questions
 
-Last updated: 2026-11-14
+Last updated: 2026-11-14 (evening, after the FIRMS harmonization and orchestrator fan-out)
 
 ## Risks
 
@@ -11,7 +11,12 @@ Last updated: 2026-11-14
 | CONUS-wide weather cost | Any tile can become active, so weather call volume is not bounded by region. | Cap concurrent active tiles; verify the Open-Meteo cap first. |
 | Live and training data differ | Near-real-time detections are replaced by science-quality data after about 5 months. | Train on NRT only, or add an NRT-vs-SP calibration term. |
 | Open-Meteo model change | HRRR is discontinued on 2026-11-30; RRFS replaces it for North America. | Request RRFS or best match. Never hardcode HRRR. |
-| FIRMS archive turnaround unknown | Delivered by email after a request; no stated time. | Submit the request first. Fall back to paging the Area API 5 days at a time. |
+| Orchestrator not wired or run | The scheduler starts when `FIRMS_MAP_KEY` is set, but no Express route calls `requestTileAt`, and the fetchers have not been run against the real APIs. Integration testing is planned once the orchestrator is further along. | Wire `GET /tiles` once the contract is agreed, then integration-test. |
+| Grid defined twice | The tile grid exists in Python (`apps/inference/shared/grid.py`) and TypeScript (`apps/orchestrator/src/fan-out/grid.ts`). They agree today, but a change to one must be copied to the other. The web mock still uses its own IDs. | Change both together; switch the web mock to `r..c..` IDs. |
+| Landsat-only detections may not be wildfires | Landsat catches small fires the other sensors miss, but has no `type` flag, and many are likely agricultural or prescribed burns or industrial heat. | Let the model learn Landsat's false-alarm rate from WFIGS labels; consider masking persistent hot cells. |
+| S-NPP archive ends 2 November | Other sensors run to 14 November. | Fill the gap from the live API, or check whether the archive request was cut short. |
+| Alaska and Hawaii untiled | About 1.5 M harmonized detections fall outside the CONUS grid. | Filter them for training, or extend the grid if coverage grows. |
+| Harmonized data is CSV, not Parquet | pyarrow was not installed when the run happened. | Run `uv sync`, then the rewrite command in `apps/inference/sources/firms/README.md`. |
 | Revisit gaps | Polar orbiters pass a few times a day, so "live" can be hours old. | Show detection age on the map. Consider a geostationary source later (not evaluated). |
 | Open-Meteo free-tier limits | A dense CONUS grid polled hourly may exceed the free cap, and the free tier is non-commercial. | Check the pricing page; batch coordinates; coarsen the weather grid and interpolate. |
 | Attribution | Mendeley dataset is CC BY 4.0. | Credit it on the site if used. |
@@ -23,7 +28,9 @@ Last updated: 2026-11-14
 
 These came from memory or were not on the pages read. Confirm before building on them.
 
-- FIRMS Area API column names per sensor. The archive CSVs are now verified (see `apps/inference/sources/firms/README.md`); the API has not been called.
+- FIRMS Area API column names per sensor. The archive CSVs are now verified (see `apps/inference/sources/firms/README.md`); the API has not been called. The orchestrator parser assumes `latitude, longitude, acq_date, acq_time, satellite, confidence, frp, scan, track`.
+- VIIRS NOAA-21 start date: `data-sources.md` gives 2024-01-17, but the harmonized archive has NOAA-21 rows from March 2023.
+- Python FIRMS tests pass in Claude's cloud workspace but have not been run on the Windows computer; orchestrator tests have not been run anywhere.
 - Open-Meteo free-tier daily call cap and licence wording
 - LANDFIRE pixel size (expected 30 m)
 - Daymet release cadence (expected annual)
@@ -33,9 +40,10 @@ These came from memory or were not on the pages read. Confirm before building on
 
 ## Open questions for the team
 
-1. Model cell size inside a tile, projection and time step? (Tile size is decided: 50 km.)
+1. Model cell size inside a tile and time step? Is the working projection (EPSG:5070, IDs like `r40c80`) acceptable? (Tile size is decided: 50 km.)
 2. Where does per-sensor overpass coverage come from?
 3. Hosting: where does ingestion run, and how often?
-4. Map stack for the frontend: MapLibre GL JS in the first cut (decision 10, pending team review). Basemap provider still open.
-6. Is the `GET /tiles` contract proposed in `apps/web/README.md` acceptable to the orchestrator and inference owners?
+4. Map stack for the frontend: MapLibre GL JS in the first cut (decision 10, pending team review). Basemap provider and DEM source for terrain still open.
 5. Does a second NASA dataset (for example Daymet) help with judging enough to justify the work?
+6. Are the `GET /tiles` and `GET /states/{fips}/preview` contracts proposed in `apps/web/README.md` acceptable to the orchestrator and inference owners? What should the preview show for inactive tiles?
+7. Are the polling cadence (FIRMS every 15 minutes, weather hourly) and the 200 active-tile cap right?

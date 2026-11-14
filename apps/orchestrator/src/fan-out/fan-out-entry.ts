@@ -1,16 +1,12 @@
-import { getWeatherAttributes } from "./meteo.ts";
-import { getFireAttributes } from "./firms.ts";
+import { tileIdAt } from "./grid.ts";
+import type { Ingestion } from "./scheduler.ts";
+import type { TileBundle } from "./types.ts";
 
-// FIRMS searches a 300-square-mile box centered on the selected point.
-export async function fanOutEntry(lat: number, long: number) {
-  const [weatherResult, fireResult] = await Promise.all([
-    getWeatherAttributes(lat, long),
-    getFireAttributes(lat, long),
-  ]);
-
-  return {
-    ...weatherResult,
-    ...fireResult,
-    location: { latitude: lat, longitude: long },
-  };
+// User trigger (work item 1). Under decision 2 a request never fetches external
+// data itself: it snaps the point to its 50 km tile, marks the tile active and
+// returns whatever the scheduler has cached ("queued" until weather arrives).
+export function requestTileAt(ingestion: Ingestion, lat: number, long: number): TileBundle {
+  const tileId = tileIdAt(lat, long);
+  if (!tileId) throw new Error("Point is outside the supported area (CONUS).");
+  return ingestion.requestTile(tileId);
 }
