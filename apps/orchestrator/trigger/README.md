@@ -9,6 +9,6 @@ The trigger does not fetch external data itself. Ingestion is scheduled (see `do
 
 ## Open questions
 
-- Tile size (recommended: 50 km x 50 km fixed grid).
+- Tile ID scheme and projection for the 50 km x 50 km grid (tile size decided 2026-11-14).
 - What the user sees while a newly requested tile is being processed.
-- Validate that the point is inside the supported area (US).
+- Validate that the point is inside the supported area (CONUS).
