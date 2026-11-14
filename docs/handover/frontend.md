@@ -11,7 +11,7 @@ The map site lives in `apps/web` (React, Vite, MapLibre GL JS). It runs on gener
 | `b297267` | First cut of the map on mock data: MapLibre map, tile panel, legend, orchestrator client and mock tile generator. |
 | `3bdb9c5` | State hover, statewide preview and tile drill-down. |
 | `19bcc10` | Terrain under the tile view, fixed compass and scale bar. |
-| `cf9a4b2` | Browser location opens the user's state, zoom-driven focus and unfocus, "← US map" return button. |
+| `b9a5456` | Browser location opens the user's state, zoom-driven focus and unfocus, "← US map" return button. |
 
 ## Features
 
