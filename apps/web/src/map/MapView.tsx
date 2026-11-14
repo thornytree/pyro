@@ -15,8 +15,8 @@ import type { LatLong, StatePreview, TileResponse } from "../api/types";
 import { ageHours } from "../lib/age";
 import { CONUS_BOUNDS } from "../lib/conus";
 import { geometryBounds, maskOutside, scaleGeometry } from "../lib/geo";
-import type { StateFeature } from "../lib/states";
-import { resolveClick } from "./interaction";
+import { stateAt as stateContaining, type StateFeature } from "../lib/states";
+import { resolveClick, resolveZoom } from "./interaction";
 import {
   CELLS_SOURCE,
   DETECTIONS_SOURCE,
@@ -31,12 +31,18 @@ import {
   STATES_FILL_LAYER,
   STATES_SOURCE,
   TILE_SOURCE,
+  USER_SOURCE,
 } from "./layers";
 
 setWorkerUrl(workerUrl);
 
 const EMPTY: FeatureCollection = { type: "FeatureCollection", features: [] };
 const DATA_SOURCES = [CELLS_SOURCE, TILE_SOURCE, DETECTIONS_SOURCE, PREVIEW_SOURCE];
+const NATIONAL_PADDING = 24;
+const STATE_MAX_ZOOM = 8;
+const TILE_MAX_ZOOM = 9;
+/** Marks camera moves made by the app, so zoom handling only reacts to the user. */
+const AUTO = { pyroAuto: true };
 const CONUS: [number, number, number, number] = [
   CONUS_BOUNDS.west,
   CONUS_BOUNDS.south,
@@ -50,7 +56,9 @@ interface Props {
   selectedState: StateFeature | null;
   preview: StatePreview | null;
   tile: TileResponse | null;
+  userLocation: LatLong | null;
   onSelectState: (fips: string) => void;
+  onClearState: () => void;
   onSelectPoint: (point: LatLong) => void;
 }
 
@@ -82,6 +90,13 @@ function prefersReducedMotion(): boolean {
   return window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
 }
 
+function point({ lat, long }: LatLong): FeatureCollection {
+  return {
+    type: "FeatureCollection",
+    features: [{ type: "Feature", properties: {}, geometry: { type: "Point", coordinates: [long, lat] } }],
+  };
+}
+
 /** Keeps the side panel from covering the area being framed. */
 function framePadding(map: MapLibreMap) {
   const narrow = map.getContainer().clientWidth < 600;
@@ -94,7 +109,9 @@ export function MapView({
   selectedState,
   preview,
   tile,
+  userLocation,
   onSelectState,
+  onClearState,
   onSelectPoint,
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -102,8 +119,8 @@ export function MapView({
   const [ready, setReady] = useState(false);
 
   // Handlers are bound once; they read the latest props through refs.
-  const latest = useRef({ states, selectedState, onSelectState, onSelectPoint });
-  latest.current = { states, selectedState, onSelectState, onSelectPoint };
+  const latest = useRef({ states, selectedState, onSelectState, onClearState, onSelectPoint });
+  latest.current = { states, selectedState, onSelectState, onClearState, onSelectPoint };
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -111,7 +128,7 @@ export function MapView({
       container: containerRef.current,
       style: styleUrl,
       bounds: CONUS,
-      fitBoundsOptions: { padding: 24 },
+      fitBoundsOptions: { padding: NATIONAL_PADDING },
     });
     mapRef.current = map;
     map.addControl(new NavigationControl({ showCompass: false }), "top-right");
@@ -182,7 +199,7 @@ export function MapView({
         type: "geojson",
         data: { type: "FeatureCollection", features: latest.current.states },
       });
-      for (const id of [MASK_SOURCE, SELECTED_SOURCE, LIFT_SOURCE]) {
+      for (const id of [MASK_SOURCE, SELECTED_SOURCE, LIFT_SOURCE, USER_SOURCE]) {
         map.addSource(id, { type: "geojson", data: EMPTY });
       }
       for (const layer of LAYERS) map.addLayer(layer);
@@ -225,6 +242,35 @@ export function MapView({
       }
     });
 
+    // Zooming in on a state opens it; zooming well out of an open state closes it.
+    map.on("zoomend", (event) => {
+      if ((event as { pyroAuto?: boolean }).pyroAuto) return;
+      const { states: all, selectedState: selected, onSelectState: openState, onClearState: close } =
+        latest.current;
+      const nationalZoom = map.cameraForBounds(CONUS, { padding: NATIONAL_PADDING })?.zoom;
+      if (nationalZoom === undefined) return;
+      const stateZoom = selected
+        ? map.cameraForBounds(geometryBounds(selected.geometry), {
+            padding: framePadding(map),
+            maxZoom: STATE_MAX_ZOOM,
+          })?.zoom
+        : null;
+      if (stateZoom === undefined) return;
+
+      const intent = resolveZoom(map.getZoom(), nationalZoom, stateZoom);
+      if (intent.kind === "unfocus") {
+        close();
+      } else if (intent.kind === "focus") {
+        // Prefer the highlighted state; fall back to the one in the middle of the view.
+        const centre = map.getCenter();
+        const target =
+          all.find((s) => s.id === hoveredState) ?? stateContaining(all, centre.lat, centre.lng);
+        if (!target) return;
+        setHoveredState(null);
+        openState(target.properties.fips);
+      }
+    });
+
     return () => {
       cancelAnimationFrame(animation);
       setReady(false);
@@ -244,7 +290,7 @@ export function MapView({
     if (!selectedState) {
       set(MASK_SOURCE, EMPTY);
       set(SELECTED_SOURCE, EMPTY);
-      map.fitBounds(CONUS, { padding: 24 });
+      map.fitBounds(CONUS, { padding: NATIONAL_PADDING }, AUTO);
       return;
     }
     set(MASK_SOURCE, {
@@ -252,10 +298,11 @@ export function MapView({
       features: [{ type: "Feature", properties: {}, geometry: maskOutside(selectedState.geometry) }],
     });
     set(SELECTED_SOURCE, { type: "FeatureCollection", features: [selectedState] });
-    map.fitBounds(geometryBounds(selectedState.geometry), {
-      padding: framePadding(map),
-      maxZoom: 8,
-    });
+    map.fitBounds(
+      geometryBounds(selectedState.geometry),
+      { padding: framePadding(map), maxZoom: STATE_MAX_ZOOM },
+      AUTO,
+    );
   }, [selectedState, ready]);
 
   useEffect(() => {
@@ -289,8 +336,19 @@ export function MapView({
       })),
     });
     const [west, south, east, north] = tile.bounds;
-    map.fitBounds([west, south, east, north], { padding: framePadding(map), maxZoom: 9 });
+    map.fitBounds(
+      [west, south, east, north],
+      { padding: framePadding(map), maxZoom: TILE_MAX_ZOOM },
+      AUTO,
+    );
   }, [tile, ready]);
+
+  useEffect(() => {
+    if (!ready) return;
+    mapRef.current
+      ?.getSource<GeoJSONSource>(USER_SOURCE)
+      ?.setData(userLocation ? point(userLocation) : EMPTY);
+  }, [userLocation, ready]);
 
   return <div ref={containerRef} className="map" data-ready={ready} />;
 }

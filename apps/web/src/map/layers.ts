@@ -8,6 +8,7 @@ export const PREVIEW_SOURCE = "pyro-preview";
 export const MASK_SOURCE = "pyro-mask";
 export const SELECTED_SOURCE = "pyro-selected-state";
 export const LIFT_SOURCE = "pyro-lift";
+export const USER_SOURCE = "pyro-user-location";
 
 export const STATES_FILL_LAYER = "pyro-states-fill";
 export const PREVIEW_FILL_LAYER = "pyro-preview-fill";
@@ -159,5 +160,16 @@ export const LAYERS: LayerSpecification[] = [
     type: "line",
     source: LIFT_SOURCE,
     paint: { "line-color": "#fe9f6d", "line-width": 2 },
+  },
+  {
+    id: "pyro-user-location",
+    type: "circle",
+    source: USER_SOURCE,
+    paint: {
+      "circle-radius": 6,
+      "circle-color": "#4da3ff",
+      "circle-stroke-color": "#ffffff",
+      "circle-stroke-width": 2,
+    },
   },
 ];
