@@ -1,6 +1,11 @@
+# node
+node_modules/
+dist/
+
 # secrets
 .env
 .env.*
+!.env.example
 
 # data and model artifacts
 data/
@@ -9,6 +14,10 @@ data/
 *.pt
 
 # python
-__pycache__/
-*.pyc
 .venv/
+__pycache__/
+*.py[cod]
+
+# editor / OS
+.idea/
+.DS_Store

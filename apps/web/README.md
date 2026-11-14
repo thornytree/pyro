@@ -1,9 +1,9 @@
-# frontend
+# web
 
 The website: interactive US heat map of current and predicted wildfires.
 
-- Sends `lat`, `long` to `backend/trigger`.
-- Renders model output from `backend/model/inference`.
+- Sends `lat`, `long` to `apps/orchestrator` (`trigger/`). Base URL comes from `VITE_ORCHESTRATOR_URL`.
+- Renders model output from `apps/inference/model/inference`, relayed by the orchestrator.
 
 ## Open questions
 

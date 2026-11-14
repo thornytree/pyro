@@ -7,7 +7,8 @@
 | 1 | Daymet is training only | Not part of the real-time bundle. See the risk note in `data-sources.md`. |
 | 2 | Ingestion is scheduled, scoped by region | Not fetched per user click. Users pick a region on the map (or share a region ID); only requested regions get the expensive processing. |
 | 3 | First model target is burn probability | Direction, rate of spread and perimeter are shown as a proof of concept only where perimeter data exists. |
-| 4 | Backend is split into work-item folders | See `backend/README.md`. |
+| 4 | Work is split into work-item folders under `apps/` | See `apps/README.md`. |
+| 5 | Three apps: `web` and `orchestrator` in TypeScript, `inference` in Python | The model is exposed to the orchestrator through a FastAPI service. |
 
 ## Recommended design for decision 2 (not yet agreed)
 

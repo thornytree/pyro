@@ -2,7 +2,7 @@
 
 Work item 2: builds the harmonized data bundle.
 
-- **Input:** region of interest and timestamp from `trigger` (live) or a historical date (training).
+- **Input:** region of interest and timestamp from `apps/orchestrator/trigger` (live) or a historical date (training).
 - **Output:** one bundle with coordinates, FIRMS detections, weather, topography and Daymet features on a common grid and time base.
 
 ## Responsibilities

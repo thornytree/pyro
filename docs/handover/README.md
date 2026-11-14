@@ -46,11 +46,13 @@ Hard requirement: at least one NASA dataset or API. NASA FIRMS covers it.
 
 ## Repo layout
 
-Added 2026-11-14. One folder per work item; each has a README with inputs, outputs and open questions.
+Added 2026-11-14, moved under `apps/` the same day to match the team structure. One folder per work item; each has a README with inputs, outputs and open questions.
 
-- `backend/trigger/`: lat/long input
-- `backend/sources/{firms,weather,topography,daymet}/`: one fetcher per external source
-- `backend/harmonization/`: builds the data bundle
-- `backend/model/{training,inference}/`
-- `backend/shared/`: schemas, grid, config
-- `frontend/`: the map site
+- `apps/web/`: the map site (TypeScript, React/Vite)
+- `apps/orchestrator/`: public API (TypeScript, Express)
+- `apps/orchestrator/trigger/`: lat/long input
+- `apps/inference/`: Python pipeline and model, exposed via FastAPI
+- `apps/inference/sources/{firms,weather,topography,daymet}/`: one fetcher per external source
+- `apps/inference/harmonization/`: builds the data bundle
+- `apps/inference/model/{training,inference}/`
+- `apps/inference/shared/`: schemas, grid, config

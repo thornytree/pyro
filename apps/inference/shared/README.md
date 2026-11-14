@@ -1,6 +1,6 @@
 # shared
 
-Code and definitions used by more than one backend folder.
+Code and definitions used by more than one folder in `apps/inference`.
 
 - Bundle schema and the unified FIRMS schema.
 - Grid definition (cell size, projection, extent).
