@@ -54,3 +54,30 @@ export type TileFetcher = (
   point: LatLong,
   signal?: AbortSignal,
 ) => Promise<TileResponse>;
+
+// --- State preview (PROPOSED, see "Proposed API contract" in README) -------
+
+export interface PreviewTileProperties {
+  /** Same ID that GET /tiles returns for a point in this tile. */
+  tileId: string;
+  /** Highest cell probability in the tile, 0 to 1; null if the tile has no model output yet. */
+  peakProbability: number | null;
+  /** Mean cell uncertainty, 0 to 1; null with peakProbability. */
+  meanUncertainty: number | null;
+}
+
+export type PreviewTileCollection = FeatureCollection<Polygon, PreviewTileProperties>;
+
+export interface StatePreview {
+  /** Two-digit state FIPS code. */
+  stateId: string;
+  /** Newest model output among the tiles; null if none have any. */
+  updatedAt: string | null;
+  /** One coarse cell per 50 km tile that overlaps the state. */
+  tiles: PreviewTileCollection;
+}
+
+export type StatePreviewFetcher = (
+  stateId: string,
+  signal?: AbortSignal,
+) => Promise<StatePreview>;

@@ -17,6 +17,12 @@ Opens on port 5173. With `VITE_USE_MOCK=true` (the default in `.env.example`) th
 
 `npm test --workspace @pyro/web` runs the unit tests; `npm run typecheck --workspace @pyro/web` type-checks.
 
+## Interaction
+
+1. **National view.** Hovering a state enlarges it (scaled 8% about its centre in Web Mercator, with a drop shadow; instant if the user prefers reduced motion). Clicking opens it.
+2. **State view.** The map frames the state, dims everything else and loads a coarse preview: one square per 50 km tile, coloured by that tile's highest cell. Hovering outlines the tile a click would load. "Open the highest-risk tile" jumps to the hottest one. Clicking a neighbouring state switches to it; "All states" or Esc goes back.
+3. **Tile view.** Clicking inside the open state calls `GET /tiles` as before and draws the full-resolution cells and detections in place of that tile's preview square.
+
 ## Layout
 
 - `src/config.ts`: reads and validates `VITE_*` variables. Nothing else touches `import.meta.env`.
@@ -24,7 +30,7 @@ Opens on port 5173. With `VITE_USE_MOCK=true` (the default in `.env.example`) th
 - `src/api/client.ts`: orchestrator client. `src/api/mock.ts`: generated tiles with the same shape.
 - `src/map/`: MapLibre map and layer styling.
 - `src/components/`: side panel and legend.
-- `src/lib/`: CONUS bounds pre-check, detection age helpers.
+- `src/lib/`: CONUS bounds pre-check, detection age helpers, state outlines (`states.ts`), geometry helpers (`geo.ts`), preview summary.
 
 ## Decided here
 
@@ -46,9 +52,22 @@ Opens on port 5173. With `VITE_USE_MOCK=true` (the default in `.env.example`) th
 
 Geometry is GeoJSON in EPSG:4326 so the web app does not depend on the model grid's cell size or projection. A non-2xx status is shown as an error. The exact types are in `src/api/types.ts`.
 
+`GET {VITE_ORCHESTRATOR_URL}/states/{fips}/preview` (two-digit state FIPS code, e.g. `06`) returns:
+
+| Field | Type | Note |
+|---|---|---|
+| `stateId` | string | The FIPS code requested. |
+| `updatedAt` | ISO 8601 string or null | Newest model output among the tiles. |
+| `tiles` | GeoJSON FeatureCollection of Polygons | One feature per 50 km tile overlapping the state. Properties: `tileId` (same ID as `GET /tiles`), `peakProbability` (0 to 1, or null if the tile has no output yet), `meanUncertainty` (0 to 1 or null). |
+
+Tiles with `null` values are drawn grey ("no model output yet"). The preview is read-only: it must not activate tiles.
+
 ## Caveats
 
 - **Mock data is not real data.** With `VITE_USE_MOCK=true` every number on screen is generated (`src/api/mock.ts`). The panel shows a "mock data" badge. Do not demo it as model output.
+- **A statewide preview conflicts with decision 2 as written.** Weather and the model run only for active tiles, so most preview squares would have no output (grey) on a real backend. Options: show FIRMS detection density for inactive tiles, run a cheap coarse model nationwide, or accept a mostly grey preview. Needs a decision before the orchestrator implements the endpoint.
+- **State outlines are bundled** from `us-atlas` (Census Bureau 1:10m, about 110 kB). States are matched by FIPS code; Alaska, Hawaii and territories are left out (decision 7).
+- **The mock preview is built in the browser** from the same generated tiles as `GET /tiles`, so its numbers match the full tile. Texas takes about 30 ms.
 - **Mock tiles are not the real grid.** The mock snaps to a 0.5 degree lat/long grid with 10 x 10 cells and IDs like `mock-79_-223`. Real tiles are 50 km (decision 6) with an ID scheme and projection still to be set by `apps/orchestrator/trigger`.
 - **The contract is unilateral.** `GET /tiles` and its response shape were written from the web side only. The orchestrator does not implement it yet; with `VITE_USE_MOCK=false` every click currently ends in an error.
 - **The CONUS check is a bounding box** (`src/lib/conus.ts`). It accepts parts of Canada, Mexico and ocean. The orchestrator must do the real validation.
@@ -57,7 +76,7 @@ Geometry is GeoJSON in EPSG:4326 so the web app does not depend on the model gri
 - **MapLibre v6 worker.** MapLibre finds its web worker relative to its own module URL, which Vite rewrites. `src/map/MapView.tsx` imports the worker with `?url` and calls `setWorkerUrl`. Removing that breaks the map with "Worker failed to load".
 - **Bundle size.** About 1.3 MB of JS (370 kB gzipped), nearly all MapLibre. Lazy-load the map if initial load time matters.
 - **Payload size is untested.** One tile as GeoJSON polygons is fine at 100 cells; at a fine cell size (for example 375 m, about 18,000 cells per tile) it may need a raster or a compact array format instead.
-- **No component or end-to-end tests.** Unit tests cover the client, mock, config and helpers. The map and panel were checked by hand in a headless browser.
+- **No component or end-to-end tests.** Unit tests cover the client, mock, config, geometry, state outlines and click handling. The hover, state and tile flow was checked by hand in a headless browser against a blank basemap.
 - **Detection ages are computed when a tile loads** and do not tick while the page stays open.
 
 ## Open questions
