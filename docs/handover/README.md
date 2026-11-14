@@ -19,7 +19,7 @@ Hard requirement: at least one NASA dataset or API. NASA FIRMS covers it.
 | Model design | Structure agreed (latent fire state, per-sensor likelihoods), see [model-outline.md](model-outline.md) |
 | Ingestion code | Not started |
 | Model code | Not started |
-| Website / map | First cut in `apps/web`: MapLibre map, tile panel, legend. Runs on mock data only; the API contract is a web-side proposal. See `apps/web/README.md` |
+| Website / map | `apps/web`: national, state and tile views; terrain under the tile heat map; compass and scale bar. Runs on mock data only; the API contract is a web-side proposal. See [frontend.md](frontend.md) |
 | Repo | App scaffolds under `apps/`, docs and folder READMEs |
 
 ## Docs in this folder
@@ -27,6 +27,7 @@ Hard requirement: at least one NASA dataset or API. NASA FIRMS covers it.
 - [decisions.md](decisions.md): what the team has decided, with dates
 - [data-sources.md](data-sources.md): which sources we use, which we dropped, and why
 - [model-outline.md](model-outline.md): agreed structure for the Pyro model
+- [frontend.md](frontend.md): what the map site does so far, and its gaps
 - [risks-and-open-questions.md](risks-and-open-questions.md): known gaps and things nobody has verified yet
 
 ## Next steps, in order

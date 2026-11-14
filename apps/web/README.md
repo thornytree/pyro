@@ -22,20 +22,23 @@ Opens on port 5173. With `VITE_USE_MOCK=true` (the default in `.env.example`) th
 0. **Location.** On load the browser asks for the user's location. If they allow it and the point is in a CONUS state, that state opens (unless they already opened one) and a blue dot marks them. "Use my location" asks again. The tile itself is not loaded, because loading a tile activates it.
 1. **National view.** Hovering a state enlarges it (scaled 8% about its centre in Web Mercator, with a drop shadow; instant if the user prefers reduced motion). Clicking opens it, and so does zooming in one level past the national framing (the hovered state, or the one at the centre of the view).
 2. **State view.** The map frames the state, dims everything else and loads a coarse preview: one square per 50 km tile, coloured by that tile's highest cell. Hovering outlines the tile a click would load. "Open the highest-risk tile" jumps to the hottest one. Clicking a neighbouring state switches to it; "All states", the "← US map" button on the map, Esc, or zooming out one level past the state's framing goes back. Thresholds are in `src/map/interaction.ts`.
-3. **Tile view.** Clicking inside the open state calls `GET /tiles` as before and draws the full-resolution cells and detections in place of that tile's preview square.
+3. **Tile view.** Clicking inside the open state calls `GET /tiles` as before and draws the full-resolution cells and detections in place of that tile's preview square. Terrain is drawn underneath: an elevation tint, multidirectional hillshade and contour lines (metres; majors labelled when the basemap has glyphs). Cells and preview squares are drawn lighter in this view so the relief shows through. Terrain is off when `VITE_TERRAIN_DEM_URL` is empty.
+
+A fixed north arrow and a metric / imperial scale bar sit bottom right (top left on phones). The map cannot be rotated or tilted, so north is always up and the scale bar, measured at the centre of the view, stays accurate across it.
 
 ## Layout
 
 - `src/config.ts`: reads and validates `VITE_*` variables. Nothing else touches `import.meta.env`.
 - `src/api/types.ts`: the proposed tile contract (below).
 - `src/api/client.ts`: orchestrator client. `src/api/mock.ts`: generated tiles with the same shape.
-- `src/map/`: MapLibre map and layer styling.
-- `src/components/`: side panel and legend.
-- `src/lib/`: CONUS bounds pre-check, detection age helpers, state outlines (`states.ts`), geometry helpers (`geo.ts`), preview summary.
+- `src/map/`: MapLibre map and layer styling. `terrain.ts` builds the DEM and contour sources and layers.
+- `src/components/`: side panel, legend and map HUD (compass, scale bar).
+- `src/lib/`: scale bar maths (`scale.ts`), CONUS bounds pre-check, detection age helpers, state outlines (`states.ts`), geometry helpers (`geo.ts`), preview summary.
 
 ## Decided here
 
 - **Map library: MapLibre GL JS.** Open source, no API token, draws GeoJSON cells on the GPU. The basemap is any MapLibre style URL, set in `VITE_MAP_STYLE_URL`. The example value is OpenFreeMap (no key); check its terms before a public launch.
+- **Terrain: any raster DEM, contours generated in the browser.** `VITE_TERRAIN_DEM_URL` takes Terrarium or Mapbox Terrain-RGB tiles. The example is AWS Terrain Tiles (public, no key). Contours come from `maplibre-contour`, which builds them in a web worker from the same DEM tiles the hillshade uses, so there is no contour tile server. Hillshade and elevation tint are MapLibre's own `hillshade` and `color-relief` layers.
 - **Detection age and confidence (first pass).** Detections are dots that fade over 24 hours; the panel shows the age of the newest one. Cell colour is probability and cell opacity drops as uncertainty rises.
 
 ## Proposed API contract (not yet agreed with orchestrator / inference)
@@ -73,6 +76,8 @@ Tiles with `null` values are drawn grey ("no model output yet"). The preview is 
 - **The contract is unilateral.** `GET /tiles` and its response shape were written from the web side only. The orchestrator does not implement it yet; with `VITE_USE_MOCK=false` every click currently ends in an error.
 - **The CONUS check is a bounding box** (`src/lib/conus.ts`). It accepts parts of Canada, Mexico and ocean. The orchestrator must do the real validation.
 - **Basemap not verified end to end.** The overlay was tested against a blank local style because the build sandbox could not reach OpenFreeMap. Confirm the example style URL loads, and read OpenFreeMap's terms before a public launch.
+- **Terrain not verified with the real basemap.** Checked in a headless browser against a blank style, so contour labels (which borrow the basemap's font and glyphs) were not seen. Confirm they render with OpenFreeMap. The elevation credit is in the panel footer, not MapLibre's attribution control; check the DEM provider's terms before a public launch.
+- **Terrain is extra network load.** The tile view fetches DEM tiles (about 20 to 40 PNGs per view) and generates contours on a worker. It is only drawn in the tile view.
 - **`.env` is required.** The app shows an error page if `VITE_MAP_STYLE_URL` is missing (or `VITE_ORCHESTRATOR_URL` when not mocking). There are no built-in defaults, by design.
 - **MapLibre v6 worker.** MapLibre finds its web worker relative to its own module URL, which Vite rewrites. `src/map/MapView.tsx` imports the worker with `?url` and calls `setWorkerUrl`. Removing that breaks the map with "Worker failed to load".
 - **Bundle size.** About 1.3 MB of JS (370 kB gzipped), nearly all MapLibre. Lazy-load the map if initial load time matters.
