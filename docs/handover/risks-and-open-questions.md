@@ -47,3 +47,4 @@ These came from memory or were not on the pages read. Confirm before building on
 5. Does a second NASA dataset (for example Daymet) help with judging enough to justify the work?
 6. Are the `GET /tiles` and `GET /states/{fips}/preview` contracts proposed in `apps/web/README.md` acceptable to the orchestrator and inference owners? What should the preview show for inactive tiles?
 7. Are the polling cadence (FIRMS every 15 minutes, weather hourly) and the 200 active-tile cap right?
+8. What does the historical map mode show: archived observations and perimeters only, or model hindcasts too (which need a trained model)? Over what date range and time step? It needs a read-only, date-scoped endpoint that does not activate tiles.

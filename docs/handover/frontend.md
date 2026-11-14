@@ -1,6 +1,6 @@
 # Front end: work so far
 
-Last updated: 2026-11-14. Branch: `front-end-mockup` (merged to `main`).
+Last updated: 2026-11-14. Branch: `front-end-mockup` (merged to `main` in `802f6d9`).
 
 The map site lives in `apps/web` (React, Vite, MapLibre GL JS). It runs on generated mock data. No real model output is wired in yet. Setup, the API contract and a full list of caveats are in [`apps/web/README.md`](../../apps/web/README.md).
 
@@ -55,10 +55,11 @@ The map site lives in `apps/web` (React, Vite, MapLibre GL JS). It runs on gener
 
 ## Tests
 
-`npm test --workspace @pyro/web`: 67 unit tests covering the client, mock, config (including terrain settings), geometry, state outlines, click handling, scale-bar maths and terrain layer building. There are no component or end-to-end tests. Each feature was checked by hand in a headless browser.
+`npm test --workspace @pyro/web`: 76 unit tests covering the client, mock, config (including terrain settings), geometry, state outlines, click handling, geolocation, scale-bar maths and terrain layer building. There are no component or end-to-end tests. Each feature was checked by hand in a headless browser.
 
 ## Known gaps
 
+- **No historical mode, and no switch between historical and live/predictive.** Everything above is the live/predictive map. A historical mode (replay a past date from the FIRMS archive and, in the western US for 2020 to 2024, the Mendeley perimeters) and a toggle between the two are not built. Decision 3 asks for the two to be labelled differently. What it needs (UI, app state, a read-only date-scoped endpoint, mock data) is listed in `apps/web/README.md` under "Not built yet".
 - **Mock data only.** The orchestrator does not implement the endpoints yet, and every number on screen is generated.
 - **Statewide preview vs decision 2.** On a real backend most preview squares would be grey, because the model only runs for active tiles. This needs a team decision.
 - **Basemap and contour labels not seen end to end.** Testing used a blank style because OpenFreeMap was unreachable from the build sandbox.
@@ -68,7 +69,8 @@ The map site lives in `apps/web` (React, Vite, MapLibre GL JS). It runs on gener
 ## Next steps
 
 1. Agree the tile and preview contract with the orchestrator and inference owners.
-2. Verify the real basemap, including contour labels, in a normal browser.
-3. Add a national FIRMS detection layer (needs its own endpoint).
-4. Load a tile from a shared tile ID in the URL.
-5. Decide polling or push for queued tiles.
+2. Build the historical / live mode switch: agree what historical mode shows and its endpoint, then add the toggle, date picker and a date-aware mock.
+3. Verify the real basemap, including contour labels, in a normal browser.
+4. Add a national FIRMS detection layer (needs its own endpoint).
+5. Load a tile from a shared tile ID in the URL.
+6. Decide polling or push for queued tiles.

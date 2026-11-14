@@ -20,7 +20,7 @@ Hard requirement: at least one NASA dataset or API. NASA FIRMS covers it.
 | FIRMS archive | Done. 21.0 M detections from all five sensors harmonized into one schema in `data/firms_harmonized` (gitignored). See [firms-harmonization.md](firms-harmonization.md) |
 | Ingestion code | Started. Python: FIRMS archive normalizer and loader in `apps/inference/sources/firms/`, schema and 50 km grid in `apps/inference/shared/`. TypeScript: scheduled ingestion in `apps/orchestrator/src/fan-out/` (decision 2): nationwide FIRMS poll of all five sensors, per-active-tile Open-Meteo sampling, tile lifecycle. Not yet wired to a route or run against the live APIs. NIFC / WFIGS, LANDFIRE and Daymet not started |
 | Model code | Not started |
-| Website / map | `apps/web`: MapLibre map with national view, state hover, statewide preview and tile drill-down; opens the user's state from browser location; zoom in/out focuses and leaves states; terrain (elevation tint, hillshade, contours) under the tile view, compass and scale bar. Runs on mock data only; the API contracts are web-side proposals. See [frontend.md](frontend.md) and `apps/web/README.md` |
+| Website / map | `apps/web`: MapLibre map with national view, state hover, statewide preview and tile drill-down; opens the user's state from browser location; zoom in/out focuses and leaves states; terrain (elevation tint, hillshade, contours) under the tile view, compass and scale bar. Live/predictive mode only: the historical mode and the switch between the two are not built. Runs on mock data only; the API contracts are web-side proposals. See [frontend.md](frontend.md) and `apps/web/README.md` |
 | Orchestrator | Express server that starts the ingestion scheduler when `FIRMS_MAP_KEY` is set. `GET /tiles` and `GET /states/{fips}/preview` are not implemented |
 | Repo | App scaffolds under `apps/`, docs and folder READMEs |
 
@@ -52,6 +52,7 @@ Hard requirement: at least one NASA dataset or API. NASA FIRMS covers it.
 7. Historical Open-Meteo ingestion for training, aligned to the harmonized FIRMS dates and tiles.
 8. Find a per-sensor overpass coverage source, then implement the model.
 9. Implement `GET /tiles` in the orchestrator and turn `VITE_USE_MOCK` off.
+10. Add the historical map mode and the historical / live switch to `apps/web` (decision 3 proof of concept; needs a read-only, date-scoped endpoint). See [frontend.md](frontend.md).
 
 ## Conventions
 
