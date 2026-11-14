@@ -1,0 +1,62 @@
+import { describe, expect, it } from "vitest";
+import { ageHours, formatAge } from "./age";
+import { isInConusBounds } from "./conus";
+import { loadConfig } from "../config";
+
+describe("isInConusBounds", () => {
+  it.each([
+    ["Denver", 39.74, -104.99, true],
+    ["Miami", 25.76, -80.19, true],
+    ["Anchorage", 61.22, -149.9, false],
+    ["Honolulu", 21.31, -157.86, false],
+    ["London", 51.5, -0.12, false],
+  ])("%s", (_name, lat, long, expected) => {
+    expect(isInConusBounds(lat, long)).toBe(expected);
+  });
+});
+
+describe("age", () => {
+  const now = new Date("2026-11-14T12:00:00Z");
+
+  it("computes hours and never goes negative", () => {
+    expect(ageHours("2026-11-14T09:00:00Z", now)).toBe(3);
+    expect(ageHours("2026-11-14T13:00:00Z", now)).toBe(0);
+    expect(ageHours("not a date", now)).toBe(Number.POSITIVE_INFINITY);
+  });
+
+  it("formats by magnitude", () => {
+    expect(formatAge(0.5)).toBe("30 min ago");
+    expect(formatAge(5)).toBe("5 h ago");
+    expect(formatAge(72)).toBe("3 d ago");
+    expect(formatAge(Number.POSITIVE_INFINITY)).toBe("unknown");
+  });
+});
+
+describe("loadConfig", () => {
+  const style = "https://example.test/style.json";
+
+  it("strips trailing slashes from the orchestrator URL", () => {
+    const config = loadConfig({
+      VITE_ORCHESTRATOR_URL: "http://localhost:3001/",
+      VITE_MAP_STYLE_URL: style,
+    });
+    expect(config).toEqual({
+      orchestratorUrl: "http://localhost:3001",
+      mapStyleUrl: style,
+      useMock: false,
+    });
+  });
+
+  it("requires the orchestrator URL unless mocking", () => {
+    expect(() => loadConfig({ VITE_MAP_STYLE_URL: style })).toThrow(
+      /VITE_ORCHESTRATOR_URL/,
+    );
+    expect(
+      loadConfig({ VITE_MAP_STYLE_URL: style, VITE_USE_MOCK: "true" }).useMock,
+    ).toBe(true);
+  });
+
+  it("requires the map style URL", () => {
+    expect(() => loadConfig({ VITE_USE_MOCK: "true" })).toThrow(/VITE_MAP_STYLE_URL/);
+  });
+});

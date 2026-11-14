@@ -5,8 +5,66 @@ The website: interactive US heat map of current and predicted wildfires.
 - Sends `lat`, `long` to `apps/orchestrator` (`trigger/`). Base URL comes from `VITE_ORCHESTRATOR_URL`.
 - Renders model output from `apps/inference/model/inference`, relayed by the orchestrator.
 
+## Run
+
+```bash
+cp apps/web/.env.example apps/web/.env
+npm install
+npm run dev:web
+```
+
+Opens on port 5173. With `VITE_USE_MOCK=true` (the default in `.env.example`) the app renders generated tiles and does not call the orchestrator. Set it to `false` once the orchestrator serves `GET /tiles`.
+
+`npm test --workspace @pyro/web` runs the unit tests; `npm run typecheck --workspace @pyro/web` type-checks.
+
+## Layout
+
+- `src/config.ts`: reads and validates `VITE_*` variables. Nothing else touches `import.meta.env`.
+- `src/api/types.ts`: the proposed tile contract (below).
+- `src/api/client.ts`: orchestrator client. `src/api/mock.ts`: generated tiles with the same shape.
+- `src/map/`: MapLibre map and layer styling.
+- `src/components/`: side panel and legend.
+- `src/lib/`: CONUS bounds pre-check, detection age helpers.
+
+## Decided here
+
+- **Map library: MapLibre GL JS.** Open source, no API token, draws GeoJSON cells on the GPU. The basemap is any MapLibre style URL, set in `VITE_MAP_STYLE_URL`. The example value is OpenFreeMap (no key); check its terms before a public launch.
+- **Detection age and confidence (first pass).** Detections are dots that fade over 24 hours; the panel shows the age of the newest one. Cell colour is probability and cell opacity drops as uncertainty rises.
+
+## Proposed API contract (not yet agreed with orchestrator / inference)
+
+`GET {VITE_ORCHESTRATOR_URL}/tiles?lat=<number>&long=<number>` returns:
+
+| Field | Type | Note |
+|---|---|---|
+| `tileId` | string | Shareable ID of the 50 km tile containing the point. Scheme is the orchestrator's choice; the web app treats it as opaque. |
+| `status` | `"ready"` or `"queued"` | `queued`: tile was just activated, no model output yet. |
+| `bounds` | `[west, south, east, north]` | Degrees. |
+| `updatedAt` | ISO 8601 string or null | When the model output was produced. |
+| `cells` | GeoJSON FeatureCollection of Polygons | Properties: `probability` (0 to 1), `uncertainty` (0 to 1). |
+| `detections` | GeoJSON FeatureCollection of Points | Properties: `source`, `acquiredAt` (ISO 8601 UTC), `confidence` (0 to 1 or null), `frpMw` (number or null). |
+
+Geometry is GeoJSON in EPSG:4326 so the web app does not depend on the model grid's cell size or projection. A non-2xx status is shown as an error. The exact types are in `src/api/types.ts`.
+
+## Caveats
+
+- **Mock data is not real data.** With `VITE_USE_MOCK=true` every number on screen is generated (`src/api/mock.ts`). The panel shows a "mock data" badge. Do not demo it as model output.
+- **Mock tiles are not the real grid.** The mock snaps to a 0.5 degree lat/long grid with 10 x 10 cells and IDs like `mock-79_-223`. Real tiles are 50 km (decision 6) with an ID scheme and projection still to be set by `apps/orchestrator/trigger`.
+- **The contract is unilateral.** `GET /tiles` and its response shape were written from the web side only. The orchestrator does not implement it yet; with `VITE_USE_MOCK=false` every click currently ends in an error.
+- **The CONUS check is a bounding box** (`src/lib/conus.ts`). It accepts parts of Canada, Mexico and ocean. The orchestrator must do the real validation.
+- **Basemap not verified end to end.** The overlay was tested against a blank local style because the build sandbox could not reach OpenFreeMap. Confirm the example style URL loads, and read OpenFreeMap's terms before a public launch.
+- **`.env` is required.** The app shows an error page if `VITE_MAP_STYLE_URL` is missing (or `VITE_ORCHESTRATOR_URL` when not mocking). There are no built-in defaults, by design.
+- **MapLibre v6 worker.** MapLibre finds its web worker relative to its own module URL, which Vite rewrites. `src/map/MapView.tsx` imports the worker with `?url` and calls `setWorkerUrl`. Removing that breaks the map with "Worker failed to load".
+- **Bundle size.** About 1.3 MB of JS (370 kB gzipped), nearly all MapLibre. Lazy-load the map if initial load time matters.
+- **Payload size is untested.** One tile as GeoJSON polygons is fine at 100 cells; at a fine cell size (for example 375 m, about 18,000 cells per tile) it may need a raster or a compact array format instead.
+- **No component or end-to-end tests.** Unit tests cover the client, mock, config and helpers. The map and panel were checked by hand in a headless browser.
+- **Detection ages are computed when a tile loads** and do not tick while the page stays open.
+
 ## Open questions
 
-- Map library.
-- How detection age and confidence are shown.
-- Attribution for data sources (NASA FIRMS, Open-Meteo, LANDFIRE, and CC BY 4.0 for the Mendeley dataset if used).
+- Agree the contract above with the orchestrator and inference owners, including the error body and the status code for a point outside CONUS.
+- What `uncertainty` is (posterior standard deviation, interval width) and how it is scaled to 0 to 1.
+- Queued tiles: the panel shows a "Check again" button. Polling or push is undecided.
+- National FIRMS detection layer shown before any tile is selected (decision 7 polls FIRMS nationwide); it needs its own endpoint.
+- Loading a tile from a shared tile ID in the URL.
+- Attribution: the panel credits NASA FIRMS, Open-Meteo and LANDFIRE. Add CC BY 4.0 credit for the Mendeley dataset if it is used, and NIFC / WFIGS if perimeters are shown.
