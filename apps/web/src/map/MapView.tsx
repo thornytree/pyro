@@ -4,28 +4,57 @@ import {
   NavigationControl,
   setWorkerUrl,
   type GeoJSONSource,
+  type MapMouseEvent,
 } from "maplibre-gl";
 // MapLibre locates its worker relative to its own module URL, which a bundler
 // rewrites. Hand it the bundled worker asset explicitly.
 import workerUrl from "maplibre-gl/dist/maplibre-gl-worker.mjs?url";
 import "maplibre-gl/dist/maplibre-gl.css";
 import type { FeatureCollection } from "geojson";
-import type { LatLong, TileResponse } from "../api/types";
+import type { LatLong, StatePreview, TileResponse } from "../api/types";
 import { ageHours } from "../lib/age";
 import { CONUS_BOUNDS } from "../lib/conus";
-import { CELLS_SOURCE, DETECTIONS_SOURCE, LAYERS, TILE_SOURCE } from "./layers";
+import { geometryBounds, maskOutside, scaleGeometry } from "../lib/geo";
+import type { StateFeature } from "../lib/states";
+import { resolveClick } from "./interaction";
+import {
+  CELLS_SOURCE,
+  DETECTIONS_SOURCE,
+  LAYERS,
+  LIFT_MS,
+  LIFT_SCALE,
+  LIFT_SOURCE,
+  MASK_SOURCE,
+  PREVIEW_FILL_LAYER,
+  PREVIEW_SOURCE,
+  SELECTED_SOURCE,
+  STATES_FILL_LAYER,
+  STATES_SOURCE,
+  TILE_SOURCE,
+} from "./layers";
 
 setWorkerUrl(workerUrl);
 
 const EMPTY: FeatureCollection = { type: "FeatureCollection", features: [] };
+const DATA_SOURCES = [CELLS_SOURCE, TILE_SOURCE, DETECTIONS_SOURCE, PREVIEW_SOURCE];
+const CONUS: [number, number, number, number] = [
+  CONUS_BOUNDS.west,
+  CONUS_BOUNDS.south,
+  CONUS_BOUNDS.east,
+  CONUS_BOUNDS.north,
+];
 
 interface Props {
   styleUrl: string;
+  states: StateFeature[];
+  selectedState: StateFeature | null;
+  preview: StatePreview | null;
   tile: TileResponse | null;
-  onSelect: (point: LatLong) => void;
+  onSelectState: (fips: string) => void;
+  onSelectPoint: (point: LatLong) => void;
 }
 
-function tileOutline([west, south, east, north]: TileResponse["bounds"]): FeatureCollection {
+function rectangle([west, south, east, north]: number[]): FeatureCollection {
   return {
     type: "FeatureCollection",
     features: [
@@ -36,11 +65,11 @@ function tileOutline([west, south, east, north]: TileResponse["bounds"]): Featur
           type: "Polygon",
           coordinates: [
             [
-              [west, south],
-              [east, south],
-              [east, north],
-              [west, north],
-              [west, south],
+              [west ?? 0, south ?? 0],
+              [east ?? 0, south ?? 0],
+              [east ?? 0, north ?? 0],
+              [west ?? 0, north ?? 0],
+              [west ?? 0, south ?? 0],
             ],
           ],
         },
@@ -49,41 +78,190 @@ function tileOutline([west, south, east, north]: TileResponse["bounds"]): Featur
   };
 }
 
-export function MapView({ styleUrl, tile, onSelect }: Props) {
+function prefersReducedMotion(): boolean {
+  return window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
+}
+
+/** Keeps the side panel from covering the area being framed. */
+function framePadding(map: MapLibreMap) {
+  const narrow = map.getContainer().clientWidth < 600;
+  return narrow ? 24 : { top: 40, bottom: 40, right: 60, left: 380 };
+}
+
+export function MapView({
+  styleUrl,
+  states,
+  selectedState,
+  preview,
+  tile,
+  onSelectState,
+  onSelectPoint,
+}: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<MapLibreMap | null>(null);
-  const onSelectRef = useRef(onSelect);
-  onSelectRef.current = onSelect;
   const [ready, setReady] = useState(false);
+
+  // Handlers are bound once; they read the latest props through refs.
+  const latest = useRef({ states, selectedState, onSelectState, onSelectPoint });
+  latest.current = { states, selectedState, onSelectState, onSelectPoint };
 
   useEffect(() => {
     if (!containerRef.current) return;
     const map = new MapLibreMap({
       container: containerRef.current,
       style: styleUrl,
-      bounds: [CONUS_BOUNDS.west, CONUS_BOUNDS.south, CONUS_BOUNDS.east, CONUS_BOUNDS.north],
+      bounds: CONUS,
       fitBoundsOptions: { padding: 24 },
     });
     mapRef.current = map;
     map.addControl(new NavigationControl({ showCompass: false }), "top-right");
 
+    let hoveredState: number | null = null;
+    let hoveredTile: string | null = null;
+    let animation = 0;
+
+    const setLift = (stateId: number | null) => {
+      cancelAnimationFrame(animation);
+      const lift = map.getSource<GeoJSONSource>(LIFT_SOURCE);
+      const state =
+        stateId === null ? undefined : latest.current.states.find((s) => s.id === stateId);
+      if (!lift || !state || latest.current.selectedState) {
+        lift?.setData(EMPTY);
+        return;
+      }
+      const draw = (factor: number) =>
+        lift.setData({
+          type: "FeatureCollection",
+          features: [{ ...state, geometry: scaleGeometry(state.geometry, factor) }],
+        });
+      if (prefersReducedMotion()) {
+        draw(LIFT_SCALE);
+        return;
+      }
+      const start = performance.now();
+      const step = (now: number) => {
+        const t = Math.min(1, (now - start) / LIFT_MS);
+        const eased = 1 - (1 - t) ** 3;
+        draw(1 + (LIFT_SCALE - 1) * eased);
+        if (t < 1) animation = requestAnimationFrame(step);
+      };
+      animation = requestAnimationFrame(step);
+    };
+
+    const setHoveredState = (id: number | null) => {
+      if (id === hoveredState) return;
+      if (hoveredState !== null) {
+        map.setFeatureState({ source: STATES_SOURCE, id: hoveredState }, { hover: false });
+      }
+      hoveredState = id;
+      if (id !== null) map.setFeatureState({ source: STATES_SOURCE, id }, { hover: true });
+      setLift(id);
+    };
+
+    const setHoveredTile = (id: string | null) => {
+      if (id === hoveredTile) return;
+      if (hoveredTile !== null) {
+        map.setFeatureState({ source: PREVIEW_SOURCE, id: hoveredTile }, { hover: false });
+      }
+      hoveredTile = id;
+      if (id !== null) map.setFeatureState({ source: PREVIEW_SOURCE, id }, { hover: true });
+    };
+
+    const stateAt = (event: MapMouseEvent) =>
+      map.queryRenderedFeatures(event.point, { layers: [STATES_FILL_LAYER] })[0];
+
     map.on("load", () => {
-      for (const id of [CELLS_SOURCE, TILE_SOURCE, DETECTIONS_SOURCE]) {
+      for (const id of DATA_SOURCES) {
+        map.addSource(id, {
+          type: "geojson",
+          data: EMPTY,
+          ...(id === PREVIEW_SOURCE && { promoteId: "tileId" }),
+        });
+      }
+      map.addSource(STATES_SOURCE, {
+        type: "geojson",
+        data: { type: "FeatureCollection", features: latest.current.states },
+      });
+      for (const id of [MASK_SOURCE, SELECTED_SOURCE, LIFT_SOURCE]) {
         map.addSource(id, { type: "geojson", data: EMPTY });
       }
       for (const layer of LAYERS) map.addLayer(layer);
       setReady(true);
     });
+
+    map.on("mousemove", (event) => {
+      const state = stateAt(event);
+      const stateId = typeof state?.id === "number" ? state.id : null;
+      const selected = latest.current.selectedState;
+      // In a state, hovering it highlights the tile a click would load.
+      const inSelected = selected !== null && stateId === selected.id;
+      setHoveredState(inSelected ? null : stateId);
+      const previewTile = inSelected
+        ? map.queryRenderedFeatures(event.point, { layers: [PREVIEW_FILL_LAYER] })[0]
+        : undefined;
+      setHoveredTile(typeof previewTile?.id === "string" ? previewTile.id : null);
+      map.getCanvas().style.cursor = stateId === null ? "" : "pointer";
+    });
+
+    map.on("mouseout", () => {
+      setHoveredState(null);
+      setHoveredTile(null);
+      map.getCanvas().style.cursor = "";
+    });
+
     map.on("click", (event) => {
-      onSelectRef.current({ lat: event.lngLat.lat, long: event.lngLat.lng });
+      const { selectedState: selected, onSelectState: openState, onSelectPoint: loadTile } =
+        latest.current;
+      const fips = stateAt(event)?.properties?.fips;
+      const intent = resolveClick(
+        selected?.properties.fips ?? null,
+        typeof fips === "string" ? fips : null,
+      );
+      if (intent.kind === "open-state") {
+        setHoveredState(null);
+        openState(intent.fips);
+      } else if (intent.kind === "load-tile") {
+        loadTile({ lat: event.lngLat.lat, long: event.lngLat.lng });
+      }
     });
 
     return () => {
+      cancelAnimationFrame(animation);
       setReady(false);
       mapRef.current = null;
       map.remove();
     };
   }, [styleUrl]);
+
+  // Open state: mask the rest of the map, outline it and frame it.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !ready) return;
+    const set = (id: string, data: FeatureCollection) =>
+      map.getSource<GeoJSONSource>(id)?.setData(data);
+
+    set(LIFT_SOURCE, EMPTY);
+    if (!selectedState) {
+      set(MASK_SOURCE, EMPTY);
+      set(SELECTED_SOURCE, EMPTY);
+      map.fitBounds(CONUS, { padding: 24 });
+      return;
+    }
+    set(MASK_SOURCE, {
+      type: "FeatureCollection",
+      features: [{ type: "Feature", properties: {}, geometry: maskOutside(selectedState.geometry) }],
+    });
+    set(SELECTED_SOURCE, { type: "FeatureCollection", features: [selectedState] });
+    map.fitBounds(geometryBounds(selectedState.geometry), {
+      padding: framePadding(map),
+      maxZoom: 8,
+    });
+  }, [selectedState, ready]);
+
+  useEffect(() => {
+    if (!ready) return;
+    mapRef.current?.getSource<GeoJSONSource>(PREVIEW_SOURCE)?.setData(preview?.tiles ?? EMPTY);
+  }, [preview, ready]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -91,13 +269,15 @@ export function MapView({ styleUrl, tile, onSelect }: Props) {
     const set = (id: string, data: FeatureCollection) =>
       map.getSource<GeoJSONSource>(id)?.setData(data);
 
+    // The full-resolution tile replaces its coarse preview square.
+    map.setFilter(PREVIEW_FILL_LAYER, tile ? ["!=", ["get", "tileId"], tile.tileId] : null);
     if (!tile) {
       for (const id of [CELLS_SOURCE, TILE_SOURCE, DETECTIONS_SOURCE]) set(id, EMPTY);
       return;
     }
     const now = new Date();
     set(CELLS_SOURCE, tile.cells);
-    set(TILE_SOURCE, tileOutline(tile.bounds));
+    set(TILE_SOURCE, rectangle(tile.bounds));
     set(DETECTIONS_SOURCE, {
       type: "FeatureCollection",
       features: tile.detections.features.map((feature) => ({
@@ -109,7 +289,7 @@ export function MapView({ styleUrl, tile, onSelect }: Props) {
       })),
     });
     const [west, south, east, north] = tile.bounds;
-    map.fitBounds([west, south, east, north], { padding: 80, maxZoom: 9 });
+    map.fitBounds([west, south, east, north], { padding: framePadding(map), maxZoom: 9 });
   }, [tile, ready]);
 
   return <div ref={containerRef} className="map" data-ready={ready} />;

@@ -1,4 +1,4 @@
-import { PROBABILITY_STOPS } from "../map/layers";
+import { NO_DATA_COLOUR, PROBABILITY_STOPS } from "../map/layers";
 
 export function Legend() {
   const gradient = PROBABILITY_STOPS.map(
@@ -14,6 +14,10 @@ export function Legend() {
       <div className="legend-scale">
         <span>0%</span>
         <span>100%</span>
+      </div>
+      <div className="legend-nodata">
+        <span className="swatch" style={{ background: NO_DATA_COLOUR }} /> No model
+        output yet
       </div>
       <p className="hint">
         Fainter cells are less certain. Dots are satellite detections; they fade

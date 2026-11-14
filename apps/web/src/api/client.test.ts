@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { ApiError, createTileFetcher } from "./client";
+import { ApiError, createStatePreviewFetcher, createTileFetcher } from "./client";
 import { buildMockTile } from "./mock";
 
 const point = { lat: 39.5, long: -121.5 };
@@ -44,5 +44,29 @@ describe("createTileFetcher", () => {
       fetchReturning({ ...tile, status: "done" }),
     );
     await expect(fetcher(point)).rejects.toBeInstanceOf(ApiError);
+  });
+});
+
+describe("createStatePreviewFetcher", () => {
+  const preview = {
+    stateId: "06",
+    updatedAt: null,
+    tiles: { type: "FeatureCollection", features: [] },
+  };
+
+  it("requests /states/{fips}/preview and returns the preview", async () => {
+    const fetchImpl = fetchReturning(preview);
+    const result = await createStatePreviewFetcher("http://api.test", fetchImpl)("06");
+    expect(result).toEqual(preview);
+    expect(String(fetchImpl.mock.calls[0]?.[0])).toBe("http://api.test/states/06/preview");
+  });
+
+  it("throws ApiError on a non-2xx response or a bad body", async () => {
+    await expect(
+      createStatePreviewFetcher("http://api.test", fetchReturning({}, 500))("06"),
+    ).rejects.toMatchObject({ status: 500 });
+    await expect(
+      createStatePreviewFetcher("http://api.test", fetchReturning({ stateId: 6 }))("06"),
+    ).rejects.toBeInstanceOf(ApiError);
   });
 });

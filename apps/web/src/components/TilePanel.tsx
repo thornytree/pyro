@@ -16,7 +16,7 @@ interface Props {
 export function TilePanel({ selection, onRetry }: Props) {
   switch (selection.kind) {
     case "idle":
-      return <p>Click the map to load the 50 km tile around a point.</p>;
+      return <p>Click an area in the state to load its 50 km tile.</p>;
     case "loading":
       return <p>Loading tile…</p>;
     case "outside":
@@ -55,7 +55,7 @@ function TileSummary({ tile, onRetry }: { tile: TileResponse; onRetry: () => voi
   const newest = ages.length > 0 ? Math.min(...ages) : null;
 
   return (
-    <dl>
+    <dl className="tile-summary">
       <dt>Tile</dt>
       <dd>
         <code>{tile.tileId}</code>

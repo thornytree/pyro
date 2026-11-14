@@ -7,9 +7,14 @@ import type {
   DetectionCollection,
   FirmsSource,
   LatLong,
+  PreviewTileCollection,
+  StatePreview,
+  StatePreviewFetcher,
   TileFetcher,
   TileResponse,
 } from "./types";
+import { createPointTester, geometryBounds } from "../lib/geo";
+import type { StateFeature } from "../lib/states";
 
 const TILE_DEG = 0.5;
 const CELLS_PER_SIDE = 10;
@@ -113,3 +118,56 @@ export function buildMockTile({ lat, long }: LatLong, now: Date): TileResponse {
 
 export const mockTileFetcher: TileFetcher = async (point) =>
   buildMockTile(point, new Date());
+
+/**
+ * Coarse statewide view: one square per mock tile that has at least one cell
+ * centre inside the state, valued from those cells only. Built from the same
+ * generated tiles as buildMockTile, so the preview and the full tile agree.
+ */
+export function buildMockStatePreview(state: StateFeature, now: Date): StatePreview {
+  const [west, south, east, north] = geometryBounds(state.geometry);
+  const half = TILE_DEG / CELLS_PER_SIDE / 2;
+  const isInside = createPointTester(state.geometry);
+  const tiles: PreviewTileCollection = { type: "FeatureCollection", features: [] };
+
+  for (let row = Math.floor(south / TILE_DEG); row <= Math.floor(north / TILE_DEG); row++) {
+    for (let col = Math.floor(west / TILE_DEG); col <= Math.floor(east / TILE_DEG); col++) {
+      const tile = buildMockTile(
+        { lat: (row + 0.5) * TILE_DEG, long: (col + 0.5) * TILE_DEG },
+        now,
+      );
+      const inside = tile.cells.features.filter(({ geometry }) => {
+        const [w = 0, s = 0] = geometry.coordinates[0]?.[0] ?? [];
+        return isInside(w + half, s + half);
+      });
+      if (inside.length === 0) continue;
+
+      const [tw, ts, te, tn] = tile.bounds;
+      tiles.features.push({
+        type: "Feature",
+        geometry: {
+          type: "Polygon",
+          coordinates: [[[tw, ts], [te, ts], [te, tn], [tw, tn], [tw, ts]]],
+        },
+        properties: {
+          tileId: tile.tileId,
+          peakProbability: Math.max(...inside.map((f) => f.properties.probability)),
+          meanUncertainty:
+            inside.reduce((sum, f) => sum + f.properties.uncertainty, 0) / inside.length,
+        },
+      });
+    }
+  }
+
+  return { stateId: state.properties.fips, updatedAt: now.toISOString(), tiles };
+}
+
+export function createMockStatePreviewFetcher(
+  findState: (stateId: string) => StateFeature | undefined,
+): StatePreviewFetcher {
+  return async (stateId) => {
+    const state = findState(stateId);
+    if (!state) throw new Error(`Unknown state ${stateId}`);
+    return buildMockStatePreview(state, new Date());
+  };
+}
