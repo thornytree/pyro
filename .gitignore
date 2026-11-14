@@ -1,1 +1,23 @@
-/data/
+# node
+node_modules/
+dist/
+
+# secrets
+.env
+.env.*
+!.env.example
+
+# data and model artifacts
+data/
+*.nc
+*.tif
+*.pt
+
+# python
+.venv/
+__pycache__/
+*.py[cod]
+
+# editor / OS
+.idea/
+.DS_Store
