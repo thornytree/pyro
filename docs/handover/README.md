@@ -34,6 +34,7 @@ Hard requirement: at least one NASA dataset or API. NASA FIRMS covers it.
 - [training-bundle.md](training-bundle.md): steps and status of combining FIRMS with weather, topography and Daymet for training
 - [compiled-dataset.md](compiled-dataset.md): the joined training table, its columns, the train / validation / test split and its limits
 - [risks-and-open-questions.md](risks-and-open-questions.md): known gaps and things nobody has verified yet
+- [local-session-handoff.md](local-session-handoff.md): temporary; steps to install the training table and verify the model locally
 
 ## Done
 
