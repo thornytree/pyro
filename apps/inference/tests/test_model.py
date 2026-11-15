@@ -101,3 +101,33 @@ def test_api_loads_artifact_once_and_returns_geographic_scores(artifact):
         bad = bundle()
         bad["weather_grid"]["samples"][0]["hourly"][0]["humidity"] = 150
         assert client.post("/predict", json=bad).status_code == 422
+
+
+def compiled(directory, rows=120):
+    """A tiny table in the compiled layout: three chronological splits and column roles."""
+    rng = np.random.default_rng(2)
+    for split, year in (("train", 2020), ("validation", 2021), ("test", 2022)):
+        frame = pd.DataFrame(rng.normal(size=(rows, len(FEATURES))), columns=FEATURES)
+        frame["fire"] = (frame["om_vpd_max"] > 0).astype(int)
+        frame["date"] = f"{year}-07-01"
+        frame["cell_row"], frame["cell_col"] = np.arange(rows), 0
+        frame.to_csv(directory / f"{split}.csv.gz", index=False)
+    (directory / "columns.json").write_text(json.dumps({name: "feature" for name in FEATURES}))
+
+
+def test_missing_artifact_is_rebuilt_from_the_compiled_table(tmp_path):
+    compiled(tmp_path)
+    path = tmp_path / "artifacts" / "baseline.joblib"
+    with TestClient(create_app(path, tmp_path)) as client:
+        assert client.get("/health").json()["modelVersion"].startswith("daily-detection-v1-")
+        assert client.post("/predict", json=bundle()).status_code == 200
+    assert path.is_file() and (tmp_path / "artifacts" / "baseline.report.json").is_file()
+    built = path.stat().st_mtime_ns
+    with TestClient(create_app(path, tmp_path)):
+        assert path.stat().st_mtime_ns == built  # An existing artifact is loaded, never retrained.
+
+
+def test_startup_names_the_missing_inputs(tmp_path):
+    with pytest.raises(RuntimeError, match="train.csv.gz"):
+        with TestClient(create_app(tmp_path / "none.joblib", tmp_path)):
+            pass

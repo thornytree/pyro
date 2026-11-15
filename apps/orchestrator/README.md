@@ -83,8 +83,9 @@ implemented live and historical contracts.
 Local `.env` and `.env.example` now include `INFERENCE_URL=http://127.0.0.1:8000`
 and `INFERENCE_TIMEOUT_MS=15000`. Start Python using the inference README, then
 restart Express. For a remote model, change the URL. Leave `INFERENCE_URL` empty
-for observations-only operation. `/health` reports `configured` when a URL is set;
-that is not a reachability check. Python `/health` reports the loaded artifact.
+for observations-only operation. `/health` probes the model service and reports
+`inference: "ready"` (with `modelVersion`), `"unreachable"` or `"not_connected"`.
+Each failed inference call is logged to the server console with its reason.
 
 `src/inference/client.ts` posts the entire bundle, validates 0–1 scores, cell count,
 row-major polygon geometry and the exact 24h window. `prediction` records version,
@@ -94,8 +95,9 @@ HTTP error or malformed output produces an observation response with
 Successful results use `inference.status: "ready"`; no configured URL uses
 `not_configured`. This differs from required-provider failure, which remains 502.
 
-The baseline requires at least 24 hourly forecasts; requests with `forecastHours`
-below 24 fall back to observed data. Longer requests are scored for their first
+The baseline requires at least 24 hourly forecasts, so with inference configured
+the orchestrator fetches at least 24 hours even when `forecastHours` is lower.
+Longer requests are scored for their first
 24 hours only, as identified by `prediction.windowStart` and `windowEnd`. No
 unsupported horizon is silently presented as a spread forecast. The historical
 Daymet and LANDFIRE source bundles remain intact; the first model intentionally

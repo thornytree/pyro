@@ -89,3 +89,38 @@ test("Express returns model cells and preserves observations on inference failur
   assert.equal(fallback.cells.features.length, 0);
   assert.ok(!JSON.stringify(fallback).includes("private URL"));
 });
+
+test("health probes the model service and tiles request the 24 h window the model needs", async t => {
+  const { createServer } = await import("node:http");
+  let modelUp = true;
+  const model = createServer((_req, res) => {
+    res.writeHead(modelUp ? 200 : 503, { "Content-Type": "application/json" });
+    res.end(JSON.stringify(modelUp ? { status: "ok", modelVersion: "fixture-model" } : { detail: "starting" }));
+  }).listen(0, "127.0.0.1");
+  await new Promise(resolve => model.once("listening", resolve));
+  const modelAddress = model.address();
+  assert.ok(modelAddress && typeof modelAddress !== "string");
+  const config = readConfig({
+    FIRMS_MAP_KEY: "test", EARTHDATA_TOKEN: "test", DAYMET_START_DATE: "2020-07-01", DAYMET_END_DATE: "2020-07-03",
+    INFERENCE_URL: `http://127.0.0.1:${modelAddress.port}`,
+  });
+  const requested: Array<number | undefined> = [];
+  const app = createApp(config, async (_lat, _long, options) => {
+    requested.push(options.forecastHours);
+    return modelBundle();
+  }, async () => result());
+  const server = app.listen(0, "127.0.0.1");
+  await new Promise<void>((resolve, reject) => { server.once("listening", resolve); server.once("error", reject); });
+  t.after(() => { model.close(); server.close(); });
+  const address = server.address();
+  assert.ok(address && typeof address !== "string");
+  const base = `http://127.0.0.1:${address.port}`;
+  const up = await (await fetch(`${base}/health`)).json();
+  assert.equal(up.inference, "ready");
+  assert.equal(up.modelVersion, "fixture-model");
+  modelUp = false;
+  assert.equal((await (await fetch(`${base}/health`)).json()).inference, "unreachable");
+  assert.equal((await (await fetch(`${base}/tiles?lat=34.05&long=-118.25&forecastHours=6`)).json()).status, "ready");
+  await fetch(`${base}/tiles?lat=34.05&long=-118.25&forecastHours=48`);
+  assert.deepEqual(requested, [24, 48]);
+});

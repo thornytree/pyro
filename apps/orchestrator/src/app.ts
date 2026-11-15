@@ -58,9 +58,21 @@ export function createApp(
     next();
   });
 
-  const health = (_req: Request, res: Response) => {
+  // Probe the model service so a stopped or artifact-less inference process is visible here.
+  const inferenceHealth = async () => {
+    if (!config.inference) return { inference: "not_connected" as const };
+    try {
+      const response = await fetch(`${config.inference.url}/health`, { signal: AbortSignal.timeout(2000) });
+      const body = await response.json() as { modelVersion?: unknown };
+      if (!response.ok || typeof body.modelVersion !== "string") throw new Error();
+      return { inference: "ready" as const, modelVersion: body.modelVersion };
+    } catch {
+      return { inference: "unreachable" as const };
+    }
+  };
+  const health = async (_req: Request, res: Response) => {
     res.json({
-      status: "ok", service: "pyro-orchestrator", inference: config.inference ? "configured" : "not_connected",
+      status: "ok", service: "pyro-orchestrator", ...await inferenceHealth(),
       regionAreaSqMiles: 300,
       sources: ["Open-Meteo", "FIRMS", "Daymet", "USGS 3DEP", "LANDFIRE"],
       defaults: config.defaults,
@@ -113,7 +125,9 @@ export function createApp(
     }
     try {
       const bundle = await runFanOut(lat, long, {
-        ...config.defaults, forecastHours, daymet: { startDate, endDate },
+        // The model scores a full 24 h window; shorter requests would always be rejected by it.
+        ...config.defaults, forecastHours: config.inference ? Math.max(forecastHours!, 24) : forecastHours,
+        daymet: { startDate, endDate },
       });
       const tile = toTileResponse(bundle);
       res.set("Cache-Control", "no-store");
@@ -124,7 +138,9 @@ export function createApp(
       try {
         const prediction = await runInference(bundle, config.inference.url, config.inference.timeoutMs);
         res.json({ ...tile, ...prediction, status: "ready", inference: { status: "ready" } });
-      } catch {
+      } catch (error) {
+        // Client-constructed, credential-free messages (HTTP status, timeout, contract mismatch).
+        console.error(`Inference failed: ${error instanceof Error ? `${error.name}: ${error.message}` : "unknown error"}`);
         res.json({ ...tile, inference: {
           status: "unavailable", message: "Model inference is unavailable or rejected the forecast window. Showing source observations.",
         } });

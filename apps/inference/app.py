@@ -9,23 +9,39 @@ from model.inference.history import HistoryArchive
 
 from fastapi import FastAPI, HTTPException
 
+from threadpoolctl import threadpool_limits
+
 from model.inference.predict import Predictor
+from model.training.train import train
 from model.schema import PredictionBundle
 
 ROOT = Path(__file__).resolve().parent
+TRAINING_FILES = ("train.csv.gz", "validation.csv.gz", "test.csv.gz", "columns.json")
 
 
-def create_app(model_path: Path | None = None):
+def create_app(model_path: Path | None = None, data_dir: Path | None = None):
     path = model_path or Path(os.getenv("MODEL_PATH", "model/artifacts/baseline.joblib"))
     if not path.is_absolute():
         path = ROOT / path
 
+    data = data_dir or Path(os.getenv("TRAINING_DATA_DIR", "training/compiled"))
+    if not data.is_absolute():
+        data = ROOT / data
+
     @asynccontextmanager
     async def lifespan(app):
         if not path.is_file():
-            raise RuntimeError("Model artifact missing. Run: uv run python -m model.training.train --data training/compiled")
+            # The artifact is a build product (ignored by Git); the compiled table is committed.
+            if not all((data / name).is_file() for name in TRAINING_FILES):
+                raise RuntimeError(
+                    f"Model artifact {path} is missing and {data} lacks {', '.join(TRAINING_FILES)}. "
+                    "Restore the compiled training table or set MODEL_PATH.")
+            print(f"Model artifact missing; training from {data} (first start only).", flush=True)
+            with threadpool_limits(limits=1):
+                # Keep the tracked report.json untouched: this is a rebuild, not a new experiment.
+                train(data, path, path.with_suffix(".report.json"))
         app.state.predictor = Predictor(path)
-        app.state.history = HistoryArchive(ROOT / "training/compiled/test.csv.gz", app.state.predictor)
+        app.state.history = HistoryArchive(data / "test.csv.gz", app.state.predictor)
         yield
 
     service = FastAPI(title="Pyro experimental fire-detection baseline", lifespan=lifespan)

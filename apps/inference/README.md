@@ -15,17 +15,22 @@ uv run --directory apps/inference uvicorn app:app --host 127.0.0.1 --port 8000
 
 `GET http://127.0.0.1:8000/health` reports the loaded model version.
 `POST /predict` takes the existing orchestrator `dataBundle` directly as JSON.
-The trained local artifact is `model/artifacts/baseline.joblib`, ignored by Git.
-The service fails startup if it is missing. Override it with the `MODEL_PATH`
-environment variable (relative paths are resolved from `apps/inference`).
+The trained artifact is `model/artifacts/baseline.joblib`, ignored by Git. If it is
+missing, the service trains it on first start from `training/compiled`
+(`train.csv.gz`, `validation.csv.gz`, `test.csv.gz`, `columns.json`, committed) and
+writes its report next to the artifact, leaving the tracked `report.json` alone.
+Startup fails only if both the artifact and that table are missing. Override the
+paths with `MODEL_PATH` and `TRAINING_DATA_DIR` (relative to `apps/inference`).
 For a separate machine, copy the artifact, run the same locked environment, bind
 to the appropriate interface, and set the orchestrator's `INFERENCE_URL` to it.
 Restart inference after replacing its artifact; it is loaded once at startup.
 
 ## Retrain
 
-The supplied files are under `apps/inference/training/compiled`. They are preserved
-and ignored by Git. No sources are downloaded or training labels regenerated.
+The compiled table is committed under `apps/inference/training/compiled`. After
+recompiling (`harmonization/compile_dataset.py` writes to `<data>/training/compiled`),
+copy the three splits and `columns.json` there. No sources are downloaded or
+training labels regenerated.
 
 ```bash
 uv run --directory apps/inference python -m model.training.train --data training/compiled

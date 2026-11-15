@@ -7,7 +7,8 @@
   ],
   "scripts": {
     "dev:web": "npm run dev --workspace @pyro/web",
-    "dev:orchestrator": "npm run dev --workspace @pyro/orchestrator"
+    "dev:orchestrator": "npm run dev --workspace @pyro/orchestrator",
+    "dev:inference": "uv run --directory apps/inference --locked uvicorn app:app --host 127.0.0.1 --port 8000"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",

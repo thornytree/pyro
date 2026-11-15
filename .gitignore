@@ -24,6 +24,12 @@ __pycache__/
 .idea/
 .DS_Store
 
-# Local training inputs and trained artifacts
-/apps/inference/training/
+# Trained artifacts are rebuilt from the committed compiled table; other training inputs stay local.
+/apps/inference/training/*
+!/apps/inference/training/compiled/
+/apps/inference/training/compiled/*
+!/apps/inference/training/compiled/train.csv.gz
+!/apps/inference/training/compiled/validation.csv.gz
+!/apps/inference/training/compiled/test.csv.gz
+!/apps/inference/training/compiled/columns.json
 /apps/inference/model/artifacts/

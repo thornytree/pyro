@@ -19,9 +19,9 @@ Hard requirement: at least one NASA dataset or API. NASA FIRMS covers it.
 | Model design | Structure agreed (latent fire state, per-sensor likelihoods), see [model-outline.md](model-outline.md) |
 | FIRMS archive | Done. 21.0 M detections from all five sensors harmonized into one schema in `data/firms_harmonized` (gitignored). See [firms-harmonization.md](firms-harmonization.md) |
 | Live data retrieval | Done in `apps/orchestrator/src/fan-out/`: FIRMS (MODIS/VIIRS), NOAA RRFS weather via Open-Meteo, Daymet (Earthdata), USGS 3DEP terrain, LANDFIRE fuels, normalized onto a 28 x 28 (about 1 km) grid. Needs `FIRMS_MAP_KEY` and `EARTHDATA_TOKEN`. NIFC / WFIGS not started. |
-| Orchestrator API | `GET /health` and `GET /tiles` work and return `status: "observed"` (detections and the source bundle, no model cells). `GET /states/{fips}/preview` returns empty. No inference call; no `/history` routes. |
+| Orchestrator API | `GET /health` (probes inference) and `GET /tiles` work. With the inference service running, tiles return `status: "ready"` with model cells; otherwise `status: "observed"`. `/history/examples` and `/history/tiles` proxy the held-out archive. `GET /states/{fips}/preview` returns empty. |
 | Training data | **First version built.** FIRMS, Open-Meteo history, Daymet and LANDFIRE topography joined per 10 km cell-day: 8,071 complete rows, split 60/20/20 by date, in `data/training/compiled` (gitignored). Target is a FIRMS detection, not a WFIGS label; fuels are not included. See [compiled-dataset.md](compiled-dataset.md). |
-| Model code | **Not started.** No training, no inference service, no Python mirror of the bundle schema. |
+| Model code | **First baseline running.** Gradient-boosted daily FIRMS-detection ensemble served by FastAPI `POST /predict` (`apps/inference`). The agreed latent-sensor Pyro model is not started. The artifact is rebuilt on first start from the committed compiled table (`apps/inference/training/compiled`). |
 | Website / map | `apps/web`: national view, state hover and preview, tile drill-down, terrain, compass and scale bar, browser location, live/predictive and historical modes, about 1 km cells, experimental predicted spread. Shows real detections from the orchestrator; cells, spread, preview and historical mode only work on mock data. See [frontend.md](frontend.md). |
 
 ## Docs in this folder
@@ -78,8 +78,8 @@ One folder per work item; each has a README with status, inputs, outputs and ope
 - `apps/web/`: the map site (TypeScript, React/Vite, MapLibre GL JS)
 - `apps/orchestrator/`: public API (TypeScript, Express). `src/app.ts` routes, `src/config.ts` environment.
 - `apps/orchestrator/src/fan-out/`: source retrieval and normalization for a requested point (FIRMS, Open-Meteo, Daymet, 3DEP, LANDFIRE), plus the unused scheduler and 50 km grid
-- `apps/inference/`: Python model side, to be exposed via FastAPI
+- `apps/inference/`: Python model side, exposed via FastAPI (`app.py`)
 - `apps/inference/sources/firms/`: FIRMS archive tooling. The other `sources/*` folders have READMEs only; live retrieval moved to the orchestrator.
 - `apps/inference/harmonization/`: training bundle steps (FIRMS per cell-day, sample, weather queue, `compile_dataset.py`). Features from a live bundle are not started.
-- `apps/inference/model/{training,inference}/` (not started)
+- `apps/inference/model/{training,inference}/`: baseline training and the FastAPI predictor
 - `apps/inference/shared/`: FIRMS schema and 50 km grid

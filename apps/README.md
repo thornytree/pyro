@@ -3,8 +3,8 @@
 | App | Language | Role |
 |---|---|---|
 | `web/` | TypeScript (React/Vite, MapLibre) | Map site. Talks only to the orchestrator. |
-| `orchestrator/` | TypeScript (Express) | Public API. Takes a point, fetches and normalizes every data source for the region around it, and (to build) calls the inference service. |
-| `inference/` | Python (FastAPI, Pyro) | Model training and inference, exposed to the orchestrator over HTTP (to build). Also holds the FIRMS archive tooling used for training. |
+| `orchestrator/` | TypeScript (Express) | Public API. Takes a point, fetches and normalizes every data source for the region around it, and calls the inference service. |
+| `inference/` | Python (FastAPI, scikit-learn) | Model training and inference, exposed to the orchestrator over HTTP. A baseline today; the Pyro model is still to build. Also holds the FIRMS archive tooling used for training. |
 
 ## Data flow
 
@@ -12,7 +12,9 @@
 
 ```
 web --GET /tiles?lat&long--> orchestrator --fanOutEntry--> FIRMS, NOAA (Open-Meteo), Daymet, 3DEP, LANDFIRE
-web <--status "observed": detections + normalized bundle, no cells-- orchestrator
+                             orchestrator --POST /predict (dataBundle)--> inference (baseline model)
+web <--status "ready": cells + detections + bundle-- orchestrator
+       (status "observed", no cells, if inference is down or unset)
 ```
 
 **Target:**
@@ -31,14 +33,14 @@ Training should use the same features the orchestrator builds at serve time. How
 | Folder | Work item | Status |
 |---|---|---|
 | `orchestrator/src/fan-out/` | 1. Point input, region, source retrieval and normalization | Done for live requests (all five sources). Optional scheduled 50 km grid path exists but is not started. |
-| `orchestrator/src/app.ts` | 1. HTTP API | `GET /health`, `GET /tiles` done. Preview returns empty. No inference call, no `/history` routes. |
+| `orchestrator/src/app.ts` | 1. HTTP API | `GET /health`, `GET /tiles` (with inference call) and `/history` proxy done. Preview returns empty. |
 | `inference/sources/firms/` | 2. FIRMS archive | Done: 21 M detections harmonized. Live FIRMS is in the orchestrator. |
 | `inference/sources/weather/` | 2. Weather | Live: orchestrator (NOAA RRFS via Open-Meteo). Historical weather for training: not started. |
 | `inference/sources/topography/` | 2. Terrain and fuels | Live: orchestrator (3DEP, LANDFIRE). Historical fuel vintages for training: not started. |
 | `inference/sources/daymet/` | 2. Daymet | Retrieval in the orchestrator. Use in training: not started. |
-| `inference/harmonization/` | 2. Training bundles and features | Not started. |
-| `inference/model/training/` | 3. Training | Not started. Needs labels (NIFC / WFIGS, unverified). |
-| `inference/model/inference/` | 3. Inference service | Not started. |
+| `inference/harmonization/` | 2. Training bundles and features | First compiled table done (10 km cell-days); live-bundle features in `model/features.py`. |
+| `inference/model/training/` | 3. Training | Baseline trained (`train.py`). Latent-sensor model not started. Needs labels (NIFC / WFIGS, unverified). |
+| `inference/model/inference/` | 3. Inference service | Done for the baseline: `POST /predict`, `/history`. |
 | `inference/shared/` | Schemas and grid | FIRMS schema and 50 km grid done. `dataBundle` schema not mirrored in Python yet. |
 | `web/` | Map site | Built; mock and observed-data modes work. Waits on model output. |
 
@@ -61,6 +63,6 @@ In dependency order. Details are in each folder's README.
 
 `web` -> `orchestrator`: `GET /tiles?lat=&long=` is implemented (see `orchestrator/README.md`); `GET /states/{fips}/preview` exists but returns no tiles. `GET /history/...` and the `spread` / `drivers` / `perimeters` fields are web-side proposals in `web/README.md`.
 
-`orchestrator` -> `inference`: not defined yet (item 6 above).
+`orchestrator` -> `inference`: `POST /predict` with the `dataBundle`; response validated in `orchestrator/src/inference/client.ts`. Check both sides with `npm run test:integration --workspace @pyro/orchestrator`.
 
 See `docs/handover/` for source decisions and risks.

@@ -10,11 +10,13 @@ Interactive US wildfire map: current and predicted fire probability from a Pyro 
 
 | App | What works | Not built yet |
 |---|---|---|
-| `apps/web` | React/Vite/MapLibre map: national view, state preview, tile heat map with terrain, live/predictive and historical modes, experimental predicted spread. Calls the orchestrator, or runs on generated mock data. | Rendering real model output (none exists yet). |
-| `apps/orchestrator` | Express API. `GET /tiles` fetches FIRMS, NOAA weather (via Open-Meteo), Daymet, USGS 3DEP terrain and LANDFIRE fuels for a 300-square-mile region and returns real detections plus the full source bundle (`status: "observed"`). | Calling the inference service; `GET /states/{fips}/preview` (returns empty); `GET /history/...` routes. |
-| `apps/inference` | Python: FIRMS archive normalizer and loader (21 M harmonized detections), 50 km tile grid, schema. | FastAPI service, feature building, model training and inference. |
+| `apps/web` | React/Vite/MapLibre map: national view, state preview, tile heat map with terrain, live and historical modes. Renders model cells from the orchestrator, or runs on generated mock data. | Spread outlines against real data (mock only). |
+| `apps/orchestrator` | Express API. `GET /tiles` fetches FIRMS, NOAA weather (via Open-Meteo), Daymet, USGS 3DEP terrain and LANDFIRE fuels for a 300-square-mile region, POSTs the bundle to the inference service and returns model cells (`status: "ready"`). Falls back to observations (`status: "observed"`) if inference fails. `GET /history/...` proxies the held-out archive. | `GET /states/{fips}/preview` (returns empty); partial results when one source fails. |
+| `apps/inference` | Python FastAPI service: experimental daily FIRMS-detection baseline (gradient-boosted ensemble), `POST /predict`, `/history` replay, training code, FIRMS archive tooling. | The planned latent-sensor Pyro model, calibrated probabilities, spread. |
 
-**The main gap is the model.** The pipeline today is `web -> orchestrator -> five data sources -> web`, and it stops at observations. Nothing trains or runs the Pyro model, and the orchestrator has no inference call. See "Remaining work" in [`apps/README.md`](apps/README.md).
+The pipeline is `web -> orchestrator -> five data sources -> inference -> web`. The model is a first baseline: its scores are relative to a balanced training sample, not calibrated burn probabilities. See [`apps/inference/README.md`](apps/inference/README.md).
+
+If the map shows "Live observations" instead of scores, open `http://localhost:3001/health`: `inference` is `ready`, `unreachable` (inference service not running) or `not_connected` (`INFERENCE_URL` unset). The orchestrator also logs the reason for each failed inference call.
 
 ## Run
 
@@ -36,10 +38,10 @@ cp apps/web/.env.example apps/web/.env
 npm run dev:web
 ```
 
-Python (from `apps/inference`):
+Inference (port 8000). The trained artifact is not in Git; on first start the service trains it (a few seconds) from the compiled table in `apps/inference/training/compiled`. Start it before the orchestrator.
 
 ```bash
-uv sync
+npm run dev:inference
 ```
 
 ## Tests
@@ -50,6 +52,12 @@ npm test --workspace @pyro/web
 
 ```bash
 npm test --workspace @pyro/orchestrator
+```
+
+End-to-end contract check, orchestrator to a running inference service:
+
+```bash
+npm run test:integration --workspace @pyro/orchestrator
 ```
 
 From `apps/inference` (plain `pytest` cannot find the `shared` package; run it as a module):
