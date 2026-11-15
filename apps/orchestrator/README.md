@@ -38,8 +38,9 @@ its category in `confidenceCategory` and has null numeric confidence.
 
 Errors use `{ "error": { "code": "...", "message": "..." } }`: malformed input
 is 400, outside the coarse supported bounds is 422, unknown routes/states are 404,
-and required-source failures are 502. Provider exceptions and credentials are not
-returned. CORS permits the configured `WEB_ORIGIN`; non-browser tools work normally.
+and required-source failures are 502. Source failures include a provider `source`,
+safe `reason`, and `upstreamStatus` when available. Raw provider exceptions and
+credentials are not returned. CORS permits the configured `WEB_ORIGIN`; non-browser tools work normally.
 
 Local `apps/web/.env` is configured with `VITE_USE_MOCK=false` and the API URL.
 Run `npm run dev:web` separately. Set the flag true to use offline mock data again.

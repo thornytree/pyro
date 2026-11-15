@@ -7,7 +7,7 @@ in `../../README.md`.
 
 ## Optional scheduled-ingestion path
 
-The merge from main also retains `grid.ts`, `scheduler.ts`, `requestTileAt`,
+The merge from main also retains `grid.ts`, `scheduler.ts`, `requestTileAt` (in `request-tile.ts`),
 `fetchFirmsNationwide` and `getTileWeather`. These form a separate fixed 50 km
 EPSG:5070 grid path, matching the Python grid in `apps/inference/shared/grid.py`.
 It supports nationwide polling of MODIS, VIIRS and Landsat, plus weather refresh
@@ -54,8 +54,11 @@ radiation. Current values are weather-model estimates, not station observations.
 Those entries preserve requested and provider-resolved coordinates and timestamps.
 Nearest-sample mapping does not increase the underlying 3 km weather resolution.
 
-`daymet.ts` fetches regional NetCDF3 subsets: seven variables per calendar year,
-with at most seven requests running at once. Supply an explicit historical date
+`daymet.ts` uses NASA Earthdata's current Hyrax OPeNDAP service, not the retired
+THREDDS/NCSS endpoints. It fetches grid axes, projection and time metadata once per
+year (cached), transforms the geographic region to native Daymet LCC indices, then
+requests seven regional NetCDF3 subsets concurrently using DAP4 constraints. This
+is eight requests on a cold year and seven once its metadata is cached. Supply an explicit historical date
 range and set `EARTHDATA_TOKEN` in the server environment for authorized NASA
 Earthdata access. This is a different credential from `FIRMS_MAP_KEY`. The adapter
 sends the token as a Bearer authorization header. Dataset availability is checked
@@ -130,3 +133,17 @@ References: [USGS 3DEP ImageServer](https://elevation.nationalmap.gov/arcgis/res
 [LANDFIRE versioned services](https://lfps.usgs.gov/arcgis/rest/services),
 [canopy height units](https://landfire.gov/fuel/ch),
 [canopy scaling](https://landfire.gov/sites/default/files/documents/LFTFC_User_Guide_2020.pdf).
+
+## Failure diagnostics
+
+Fan-out wraps each provider failure with a source name and a fixed safe reason.
+Express 502 responses include `source`, `reason`, optional `upstreamStatus`, and a
+credential-free message. Raw errors, URLs, headers and nested causes are never
+serialized to the client. The server logs only the same constructed message.
+Open-Meteo connection failures receive one bounded retry; invalid data is not retried.
+
+The replacement Daymet service and its spatial-index constraints are documented
+by [ORNL DAAC](https://forum.earthdata.nasa.gov/viewtopic.php?t=7585).
+The complete July 1–3, 2020 subset near Los Angeles was verified with Earthdata
+credentials after migration. The small `daymet-axes.nc` test fixture contains only
+public dataset coordinate/projection/time metadata, not user credentials.

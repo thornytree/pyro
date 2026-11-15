@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { createFireBounds, getFireAttributes, normalizeFireAttributes } from "../src/fan-out/firms.ts";
+import getFireAttributes, { createFireBounds, normalizeFireAttributes } from "../src/fan-out/firms.ts";
 import type { FirmsRow } from "../src/fan-out/firms.ts";
 
 const row: FirmsRow = {

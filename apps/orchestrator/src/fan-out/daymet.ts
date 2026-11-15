@@ -1,3 +1,4 @@
+import proj4 from "proj4";
 import { NetCDFReader } from "netcdfjs";
 import { createRegionBounds, createRegionGrid } from "./region.ts";
 import type { BoundingBox, dataBundle, DaymetGrid, DaymetVariable } from "./types.ts";
@@ -14,6 +15,96 @@ function dateValue(value: string): number {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(value) || !Number.isFinite(date.getTime()) ||
       date.toISOString().slice(0, 10) !== value) throw new Error("Invalid Daymet date; use YYYY-MM-DD.");
   return date.getTime();
+}
+
+const baseUrl = "https://opendap.earthdata.nasa.gov/collections/C2532426483-ORNL_CLOUD/granules";
+const metadataCache = new Map<number, Promise<NetCDFReader>>();
+
+function attributeOf(reader: NetCDFReader, name: string, key: string) {
+  const variable = reader.variables.find(v => v.name === name);
+  return (variable?.attributes as Attribute[] | undefined)?.find(a => a.name === key)?.value;
+}
+
+function datesOf(reader: NetCDFReader): string[] {
+  const units = String(attributeOf(reader, "time", "units"));
+  const match = /^(days|hours|seconds) since (\d{4}-\d{2}-\d{2})(?:[ T](\d{2}:\d{2}:\d{2}))?(?: ?(?:UTC|Z))?$/.exec(units);
+  const calendar = attributeOf(reader, "time", "calendar");
+  if (!match || (calendar && !["standard", "gregorian", "proleptic_gregorian"].includes(String(calendar)))) {
+    throw new Error("Unsupported Daymet time units or calendar.");
+  }
+  const origin = Date.parse(`${match[2]}T${match[3] ?? "00:00:00"}Z`);
+  const multiplier = match[1] === "days" ? 86400000 : match[1] === "hours" ? 3600000 : 1000;
+  return (reader.getDataVariable("time").flat(Infinity) as number[])
+    .map(time => new Date(origin + time * multiplier).toISOString().slice(0, 10));
+}
+
+async function downloadDaymet(variable: DaymetVariable, year: number, constraint: string, token?: string): Promise<ArrayBuffer> {
+  const url = new URL(`${baseUrl}/Daymet_Daily_V4R1.daymet_v4_daily_na_${variable}_${year}.nc.dap.nc`);
+  url.searchParams.set("dap4.ce", constraint);
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      signal: AbortSignal.timeout(60_000),
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+  } catch (cause) {
+    throw new Error(`Daymet ${variable}/${year} request failed.`, { cause });
+  }
+  if (response.status === 401 || response.status === 403) {
+    throw new Error(`Daymet returned HTTP ${response.status}; requires authorized NASA Earthdata access; configure EARTHDATA_TOKEN.`);
+  }
+  if (!response.ok) throw new Error(`Daymet ${variable}/${year} returned HTTP ${response.status}; check dataset availability.`);
+  return response.arrayBuffer();
+}
+
+async function metadataFor(year: number, token?: string): Promise<NetCDFReader> {
+  const cached = metadataCache.get(year);
+  if (cached) return cached;
+  const result = downloadDaymet("tmin", year, "/x;/y;/time;/lambert_conformal_conic", token)
+    .then(bytes => {
+      try { return new NetCDFReader(bytes); }
+      catch (cause) { throw new Error("Daymet returned invalid NetCDF metadata.", { cause }); }
+    });
+  if (metadataCache.size >= 8) metadataCache.delete(metadataCache.keys().next().value!);
+  metadataCache.set(year, result);
+  try { return await result; }
+  catch (error) { metadataCache.delete(year); throw error; }
+}
+
+/** Convert geographic bounds to native Daymet LCC grid indices, with a border. */
+export function daymetIndices(reader: NetCDFReader, bounds: BoundingBox) {
+  const name = "lambert_conformal_conic";
+  const parallels = attributeOf(reader, name, "standard_parallel");
+  if (attributeOf(reader, name, "grid_mapping_name") !== name || !Array.isArray(parallels) || parallels.length !== 2) {
+    throw new Error("Unsupported Daymet projection metadata.");
+  }
+  const number = (key: string): number => {
+    const result = Number(attributeOf(reader, name, key));
+    if (!Number.isFinite(result)) throw new Error("Invalid Daymet projection metadata.");
+    return result;
+  };
+  const projection = `+proj=lcc +lat_1=${parallels[0]} +lat_2=${parallels[1]} +lat_0=${number("latitude_of_projection_origin")} +lon_0=${number("longitude_of_central_meridian")} +x_0=${number("false_easting")} +y_0=${number("false_northing")} +a=${number("semi_major_axis")} +rf=${number("inverse_flattening")} +units=m +no_defs`;
+  const points: number[][] = [];
+  for (let step = 0; step <= 100; step++) {
+    const lon = bounds.west + (bounds.east - bounds.west) * step / 100;
+    const lat = bounds.south + (bounds.north - bounds.south) * step / 100;
+    for (const pair of [[lon, bounds.south], [lon, bounds.north], [bounds.west, lat], [bounds.east, lat]]) {
+      points.push(proj4("EPSG:4326", projection, pair));
+    }
+  }
+  const range = (axisName: "x" | "y", coordinate: number) => {
+    const axis = reader.getDataVariable(axisName).flat(Infinity) as number[];
+    const step = axis[1]! - axis[0]!;
+    if (axis.length < 2 || !axis.every(Number.isFinite) || Math.abs(Math.abs(step) - 1000) > 0.1) {
+      throw new Error("Unsupported Daymet grid axes.");
+    }
+    const indices = points.map(point => (point[coordinate]! - axis[0]!) / step);
+    const first = Math.floor(Math.min(...indices)) - 1;
+    const last = Math.ceil(Math.max(...indices)) + 1;
+    if (last < 0 || first >= axis.length) throw new Error("Requested bounds are outside Daymet coverage.");
+    return [Math.max(0, first), Math.min(axis.length - 1, last)] as const;
+  };
+  return { x: range("x", 0), y: range("y", 1) };
 }
 
 /** Decode a regional NetCDF3 response into JSON-safe, time-major grid values. */
@@ -56,15 +147,7 @@ export function normalizeDaymetAttributes(
   const cellCount = rows * columns;
   if (latitudes.length !== cellCount || longitudes.length !== cellCount ||
       values.length !== cellCount * time.length) throw new Error("Daymet returned incomplete grid data.");
-  const timeUnits = String(attribute("time", "units"));
-  const match = /^(days|hours|seconds) since (\d{4}-\d{2}-\d{2})(?:[ T](\d{2}:\d{2}:\d{2}))?(?: ?(?:UTC|Z))?$/.exec(timeUnits);
-  const calendar = attribute("time", "calendar");
-  if (!match || (calendar && !["standard", "gregorian", "proleptic_gregorian"].includes(String(calendar)))) {
-    throw new Error("Unsupported Daymet time units or calendar.");
-  }
-  const origin = Date.parse(`${match[2]}T${match[3] ?? "00:00:00"}Z`);
-  const multiplier = match[1] === "days" ? 86400000 : match[1] === "hours" ? 3600000 : 1000;
-  const dates = time.map(t => new Date(origin + t * multiplier).toISOString().slice(0, 10));
+  const dates = datesOf(reader);
   const selected = dates.flatMap((date, index) => date >= startDate && date <= endDate ? [index] : []);
   if (!selected.length) throw new Error("Daymet returned no days in the requested range.");
   const fill = attribute(variable, "_FillValue");
@@ -102,7 +185,7 @@ export function normalizeDaymetAttributes(
   };
 }
 
-/** Historical training adapter: seven regional requests per year, never one per pixel. */
+/** Historical training adapter: one cached metadata request plus seven regional requests per year, never one per pixel. */
 export async function getDaymetAttributes(
   lat: number,
   long: number,
@@ -123,31 +206,19 @@ export async function getDaymetAttributes(
   for (let year = Number(startDate.slice(0, 4)); year <= Number(endDate.slice(0, 4)); year++) {
     const first = startDate > `${year}-01-01` ? startDate : `${year}-01-01`;
     const last = endDate < `${year}-12-31` ? endDate : `${year}-12-31`;
+    const metadata = await metadataFor(year, token);
+    const { x, y } = daymetIndices(metadata, bounds);
+    const availableDates = datesOf(metadata);
+    const selectedDays = availableDates.flatMap((date, index) => date >= first && date <= last ? [index] : []);
+    if (!selectedDays.length) throw new Error("Daymet returned no days in the requested range.");
+    const timeSlice = `[${selectedDays[0]}:1:${selectedDays.at(-1)}]`;
+    const ySlice = `[${y[0]}:1:${y[1]}]`;
+    const xSlice = `[${x[0]}:1:${x[1]}]`;
     const yearGrids = await Promise.all(variables.map(async variable => {
-      const url = new URL(`https://opendap.earthdata.nasa.gov/thredds/ncss/ornldaac/2129/daymet_v4_daily_na_${variable}_${year}.nc`);
-      for (const name of ["lat", "lon", variable]) url.searchParams.append("var", name);
-      for (const [key, value] of Object.entries(bounds)) url.searchParams.set(key, String(value));
-      url.searchParams.set("disableProjSubset", "on");
-      url.searchParams.set("horizStride", "1");
-      url.searchParams.set("time_start", `${first}T00:00:00Z`);
-      url.searchParams.set("time_end", `${last}T23:59:59Z`);
-      url.searchParams.set("timeStride", "1");
-      url.searchParams.set("accept", "netcdf"); // Classic NetCDF, readable by netcdfjs
-      let response: Response;
+      const constraint = `/x${xSlice};/y${ySlice};/time${timeSlice};/lat${ySlice}${xSlice};/lon${ySlice}${xSlice};/${variable}${timeSlice}${ySlice}${xSlice}`;
+      const bytes = await downloadDaymet(variable, year, constraint, token);
       try {
-        response = await fetch(url, {
-          signal: AbortSignal.timeout(60_000),
-          headers: token ? { Authorization: `Bearer ${token}` } : {},
-        });
-      } catch {
-        throw new Error(`Daymet ${variable}/${year} request failed or timed out.`);
-      }
-      if (response.status === 401 || response.status === 403) {
-        throw new Error("Daymet requires authorized NASA Earthdata access; configure EARTHDATA_TOKEN.");
-      }
-      if (!response.ok) throw new Error(`Daymet ${variable}/${year} returned HTTP ${response.status}; check dataset availability.`);
-      try {
-        return normalizeDaymetAttributes(await response.arrayBuffer(), variable, year, bounds, first, last);
+        return normalizeDaymetAttributes(bytes, variable, year, bounds, first, last);
       } catch (error) {
         throw new Error(`Daymet ${variable}/${year} returned invalid or unsupported NetCDF data.`, { cause: error });
       }

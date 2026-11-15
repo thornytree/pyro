@@ -171,9 +171,10 @@ export type TileWeather = {
 };
 
 /** Everything the orchestrator holds for one active tile. */
-export type TileBundle = {
+type TileBundle = {
   tile_id: string;
   status: "ready" | "queued";
   fire: { fetched_at: string | null; detections: FireDetection[] };
   weather: TileWeather | null;
 };
+export default TileBundle

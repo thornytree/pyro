@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { SourceFetchError } from "../src/fan-out/source-error.ts";
 import { createApp } from "../src/app.ts";
 import { readConfig } from "../src/config.ts";
 import { createRegionGrid } from "../src/fan-out/region.ts";
@@ -72,9 +73,11 @@ function makeBundle(): dataBundle {
 test("serves health, parses the web query, returns observations/bundle and sanitizes errors", async t => {
   const calls: Array<{ lat: number; long: number; options: FanOutOptions }> = [];
   let fail = false;
+  let typedFailure = false;
   const config = readConfig(env);
   const app = createApp(config, async (lat, long, options) => {
     calls.push({ lat, long, options });
+    if (typedFailure) throw new SourceFetchError("Daymet", new Error("Daymet returned HTTP 404"));
     if (fail) throw new Error("https://provider.test/private-firms?token=private-earthdata");
     return makeBundle();
   });
@@ -129,4 +132,10 @@ test("serves health, parses the web query, returns observations/bundle and sanit
   const error = await failed.text();
   assert.ok(error.includes("SOURCE_FETCH_FAILED"));
   assert.ok(!error.includes("private-"));
+  fail = false;
+  typedFailure = true;
+  const diagnosed = await (await fetch(`${base}/tiles?lat=34.05&long=-118.25`)).json();
+  assert.equal(diagnosed.error.source, "Daymet");
+  assert.equal(diagnosed.error.upstreamStatus, 404);
+  assert.ok(!JSON.stringify(diagnosed).includes("private-"));
 });

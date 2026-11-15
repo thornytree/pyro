@@ -27,6 +27,16 @@ function weatherValues(read: (index: number) => number | undefined): WeatherValu
   })) as WeatherValues;
 }
 
+/** Retry a transient connection failure once; provider/data errors are not retried here. */
+export async function retryWeatherRequest<T>(request: () => Promise<T>): Promise<T> {
+  try { return await request(); }
+  catch (error) {
+    if (!(error instanceof Error) || error.message !== "fetch failed") throw error;
+    await new Promise(resolve => setTimeout(resolve, 250));
+    return request();
+  }
+}
+
 /** Fetch regional NOAA forecasts, sampled at ~3 km and mapped to a ~1 km grid. */
 export async function getWeatherAttributes(
   lat: number,
@@ -44,7 +54,7 @@ export async function getWeatherAttributes(
   const batches = Array.from({ length: Math.ceil(points.length / 50) }, (_, index) =>
     points.slice(index * 50, (index + 1) * 50));
   const results = await Promise.all(batches.map(async points => {
-    const responses = await fetchWeatherApi("https://api.open-meteo.com/v1/forecast", {
+    const responses = await retryWeatherRequest(() => fetchWeatherApi("https://api.open-meteo.com/v1/forecast", {
       latitude: points.map(point => point.latitude),
       longitude: points.map(point => point.longitude),
       models: model,
@@ -56,7 +66,7 @@ export async function getWeatherAttributes(
       precipitation_unit: "mm",
       timezone: "GMT",
       cell_selection: "nearest",
-    }, 3, 0.2, 2, { signal: AbortSignal.timeout(60_000) });
+    }, 3, 0.2, 2, { signal: AbortSignal.timeout(60_000) }));
     if (responses.length !== points.length) throw new Error("Open-Meteo returned incomplete grid coverage.");
     return responses.map((response, index): WeatherGrid["samples"][number] => {
       const current = response.current();

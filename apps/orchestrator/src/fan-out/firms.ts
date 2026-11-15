@@ -161,13 +161,15 @@ async function fetchFirmsArea(
 }
 
 /** Request-driven 300-square-mile region; retain the four MODIS/VIIRS feeds. */
-export async function getFireAttributes(
+async function getFireAttributes(
   lat: number, long: number,
   options: { days?: number; mapKey?: string } = {},
 ): Promise<FireAttributes> {
   return fetchFirmsArea(createRegionBounds(lat, long), sources.filter(source => source !== "LANDSAT_NRT"),
     { ...options, days: options.days ?? 1 });
 }
+
+export default getFireAttributes
 
 export { createRegionBounds as createFireBounds } from "./region.ts";
 

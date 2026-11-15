@@ -1,8 +1,9 @@
 import { getWeatherAttributes } from "./meteo.ts";
-import { getFireAttributes } from "./firms.ts";
+import getFireAttributes from "./firms.ts";
 import { getDaymetAttributes } from "./daymet.ts";
 import { getTerrainAttributes } from "./terrain.ts";
 import { getVegetationAttributes } from "./landfire.ts";
+import { fetchSource } from "./source-error.ts";
 import type { dataBundle, LandfireVersion } from "./types.ts";
 
 export type FanOutOptions = {
@@ -18,11 +19,11 @@ export async function fanOutEntry(
   options: FanOutOptions,
 ): Promise<dataBundle> {
   const [weatherResult, fireResult, daymetResult, terrainResult, vegetationResult] = await Promise.all([
-    getWeatherAttributes(lat, long, { forecastHours: options.forecastHours }),
-    getFireAttributes(lat, long),
-    getDaymetAttributes(lat, long, options.daymet.startDate, options.daymet.endDate),
-    getTerrainAttributes(lat, long),
-    getVegetationAttributes(lat, long, { version: options.landfireVersion }),
+    fetchSource("Open-Meteo", () => getWeatherAttributes(lat, long, { forecastHours: options.forecastHours })),
+    fetchSource("FIRMS", () => getFireAttributes(lat, long)),
+    fetchSource("Daymet", () => getDaymetAttributes(lat, long, options.daymet.startDate, options.daymet.endDate)),
+    fetchSource("USGS 3DEP", () => getTerrainAttributes(lat, long)),
+    fetchSource("LANDFIRE", () => getVegetationAttributes(lat, long, { version: options.landfireVersion })),
   ]);
 
   const bundle: dataBundle = {
@@ -36,18 +37,4 @@ export async function fanOutEntry(
     vegetation: vegetationResult.vegetation,
   };
   return bundle;
-}
-
-
-import { tileIdAt } from "./grid.ts";
-import type { Ingestion } from "./scheduler.ts";
-import type { TileBundle } from "./types.ts";
-
-// User trigger (work item 1). Under decision 2 a request never fetches external
-// data itself: it snaps the point to its 50 km tile, marks the tile active and
-// returns whatever the scheduler has cached ("queued" until weather arrives).
-export function requestTileAt(ingestion: Ingestion, lat: number, long: number): TileBundle {
-  const tileId = tileIdAt(lat, long);
-  if (!tileId) throw new Error("Point is outside the supported area (CONUS).");
-  return ingestion.requestTile(tileId);
 }

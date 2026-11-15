@@ -7,6 +7,7 @@ import { rasterResponse } from "./fixtures/raster.ts";
 import { fanOutEntry } from "../src/fan-out/fan-out-entry.ts";
 
 const { WeatherApiResponse } = createRequire(import.meta.url)("@openmeteo/sdk/weather-api-response");
+const axes = readFileSync(new URL("./fixtures/daymet-axes.nc", import.meta.url));
 const fixture = readFileSync(new URL("./fixtures/daymet-small.nc", import.meta.url));
 
 test("fans out all providers and assembles a complete JSON-safe bundle only after success", async t => {
@@ -23,6 +24,10 @@ test("fans out all providers and assembles a complete JSON-safe bundle only afte
   let expectedRequests = 21;
   t.mock.method(globalThis, "fetch", async (input: string | URL) => {
     const url = new URL(input);
+    if (url.hostname === "opendap.earthdata.nasa.gov" &&
+        url.searchParams.get("dap4.ce") === "/x;/y;/time;/lambert_conformal_conic") {
+      return new Response(Uint8Array.from(axes).buffer);
+    }
     requests.push(url);
     await new Promise(resolve => setImmediate(resolve));
     // Weather, fire, Daymet, DEM and six LANDFIRE layers all start concurrently.

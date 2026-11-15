@@ -3,6 +3,7 @@ import type { NextFunction, Request, Response } from "express";
 import { fanOutEntry } from "./fan-out/fan-out-entry.ts";
 import { validHistoricalRange } from "./config.ts";
 import type { ServerConfig } from "./config.ts";
+import { SourceFetchError } from "./fan-out/source-error.ts";
 import { toTileResponse } from "./tile-response.ts";
 
 class RequestError extends Error {
@@ -83,8 +84,16 @@ export function createApp(config: ServerConfig, runFanOut: typeof fanOutEntry = 
         ...config.defaults, forecastHours, daymet: { startDate, endDate },
       });
       res.set("Cache-Control", "no-store").json(toTileResponse(bundle));
-    } catch {
-      // Provider errors may contain credentials in URLs or causes; do not serialize them.
+    } catch (error) {
+      if (error instanceof SourceFetchError) {
+        console.error(error.message); // Constructed, credential-free diagnostic.
+        res.status(502).json({ error: {
+          code: "SOURCE_FETCH_FAILED", source: error.source, reason: error.reason,
+          upstreamStatus: error.upstreamStatus, message: error.message,
+        } });
+        return;
+      }
+      // Unknown provider exceptions may include credentials; never serialize them.
       res.status(502).json({ error: { code: "SOURCE_FETCH_FAILED", message: "A required data source failed. Check credentials, source availability and the requested dates." } });
     }
   });

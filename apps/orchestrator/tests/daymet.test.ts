@@ -6,6 +6,7 @@ import { createRegionBounds } from "../src/fan-out/region.ts";
 
 // Small classic NetCDF fixture: 2x2 cells, three days including Feb 29, all seven variables.
 const fixture = readFileSync(new URL("./fixtures/daymet-small.nc", import.meta.url));
+const axes = readFileSync(new URL("./fixtures/daymet-axes.nc", import.meta.url));
 const bytes = () => Uint8Array.from(fixture).buffer;
 
 test("decodes real NetCDF values, leap dates, missing data and packed scale/offset", () => {
@@ -31,8 +32,11 @@ test("clips projected-border cells and time range without fabricating dates", ()
 test("downloads seven bounded regional subsets with Earthdata auth", async t => {
   const calls: URL[] = [];
   t.mock.method(globalThis, "fetch", async (url: URL, init: RequestInit) => {
-    calls.push(url);
     assert.equal((init.headers as Record<string, string>).Authorization, "Bearer test-token");
+    if (url.searchParams.get("dap4.ce") === "/x;/y;/time;/lambert_conformal_conic") {
+      return new Response(Uint8Array.from(axes).buffer);
+    }
+    calls.push(url);
     await new Promise(resolve => setImmediate(resolve));
     assert.equal(calls.length, 7);
     return new Response(bytes());
@@ -40,9 +44,9 @@ test("downloads seven bounded regional subsets with Earthdata auth", async t => 
   const result = await getDaymetAttributes(34.05, -118.25, "2020-02-28", "2020-03-01", { token: "test-token" });
   assert.equal(result.historical_weather?.grids.length, 7);
   assert.deepEqual(result.historical_weather?.bounds, createRegionBounds(34.05, -118.25));
-  assert.ok(calls.every(url => url.searchParams.get("horizStride") === "1"));
-  assert.ok(calls.every(url => url.searchParams.get("time_start") === "2020-02-28T00:00:00Z"));
-  assert.ok(calls.every(url => url.searchParams.get("accept") === "netcdf"));
+  assert.ok(calls.every(url => url.pathname.endsWith(".nc.dap.nc")));
+  assert.ok(calls.every(url => url.searchParams.get("dap4.ce")?.includes("/time[58:1:60]")));
+  assert.ok(calls.every(url => /\/lat\[\d+:1:\d+\]\[\d+:1:\d+\]/.test(url.searchParams.get("dap4.ce")!)));
 });
 
 test("reports auth and invalid binary responses, and rejects bad date ranges", async t => {
