@@ -55,6 +55,7 @@ export function App({ config }: { config: AppConfig }) {
   const openFips = useRef<string | null>(null);
   const tileRequest = useRef<AbortController | null>(null);
   const previewRequest = useRef<AbortController | null>(null);
+  const nextExample = useRef(0);
 
   const select = useCallback(
     async (point: LatLong) => {
@@ -223,8 +224,11 @@ export function App({ config }: { config: AppConfig }) {
               const response = await fetch(`${config.orchestratorUrl}/history/examples`);
               if (!response.ok) throw new Error("Historical archive is unavailable");
               const data = await response.json();
-              const example = data.examples?.[0];
-              if (!example) throw new Error("No historical examples are available");
+              const examples = Array.isArray(data.examples) ? data.examples : [];
+              if (examples.length === 0) throw new Error("No historical examples are available");
+              // Each click opens the next example, wrapping at the end of the list.
+              const example = examples[nextExample.current % examples.length];
+              nextExample.current = (nextExample.current + 1) % examples.length;
               const home = stateAt(states, example.lat, example.long);
               if (!home) throw new Error("Historical example is outside the map coverage");
               await openState(home.properties.fips);
