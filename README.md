@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="1000034270.jpg" alt="Pyro mascot: a penguin firefighter in a pink helmet holding flame and star balloons" width="320">
+</p>
+
 # Pyro
 
 Interactive US wildfire map: current and predicted fire probability from a Pyro (probabilistic) model that combines NASA FIRMS satellite detections with weather, terrain and fuels.
