@@ -10,7 +10,8 @@
 
 | Folder | Work item | Owner |
 |---|---|---|
-| `orchestrator/trigger/` | 1. User trigger inputs (lat/long) | TBD |
+| `orchestrator/src/fan-out/` | 1. User trigger inputs (lat/long) and scheduled FIRMS / weather ingestion | TBD |
+| `web/` | Map site: live/predictive and historical modes, predicted spread (experimental), all on mock data | TBD |
 | `inference/sources/firms/` | 2. FIRMS MODIS and VIIRS detections | TBD |
 | `inference/sources/weather/` | 2. Weather | TBD |
 | `inference/sources/topography/` | 2. Terrain and elevation | TBD |
@@ -20,9 +21,9 @@
 | `inference/model/inference/` | 3. Inference on the real-time bundle | TBD |
 | `inference/shared/` | Schemas and config used by more than one inference folder | TBD |
 
-Data flow: `web` -> `orchestrator/trigger` -> inference API -> `sources/*` -> `harmonization` -> `model/inference` -> response.
+Data flow: `web` -> `orchestrator` (`src/fan-out/`) -> inference API -> `sources/*` -> `harmonization` -> `model/inference` -> response.
 Training uses the same `sources/*` and `harmonization` code on historical dates, so features match at train and serve time.
 
-The `web` -> `orchestrator` contract (`GET /tiles?lat=&long=`) is a proposal from the web side, documented in `web/README.md`. It is not yet agreed or implemented.
+The `web` -> `orchestrator` contracts (`GET /tiles?lat=&long=`, `GET /states/{fips}/preview`) are proposals from the web side, documented in `web/README.md`. They are not yet agreed or implemented. Historical mode uses read-only `GET /history/...` routes, also proposed in `web/README.md`.
 
 Each folder's README states its inputs, outputs and open questions. See `docs/handover/` for source decisions and risks.
