@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { createApp } from "../src/app.ts";
 import { readConfig } from "../src/config.ts";
-import { predictBundle, validatePrediction } from "../src/inference/client.ts";
+import { predictBundle, predictPoints, validatePrediction } from "../src/inference/client.ts";
 import type { InferenceResult } from "../src/inference/client.ts";
 import { makeBundle } from "./fixtures/bundle.ts";
 
@@ -51,12 +51,36 @@ test("posts the actual bundle and rejects an unsuccessful model response", async
   t.mock.method(globalThis, "fetch", async (url: string, init: RequestInit) => {
     assert.equal(url, "http://model.test/predict");
     assert.equal(init.method, "POST");
-    assert.deepEqual(JSON.parse(String(init.body)).location, modelBundle().location);
+    const body = JSON.parse(String(init.body));
+    assert.deepEqual(body.location, modelBundle().location);
+    // Only the fields the model reads are sent, not the terrain, fuel, FIRMS and Daymet grids.
+    assert.deepEqual(Object.keys(body).sort(), ["location", "observation_time", "weather_grid"]);
     return fail ? new Response("bad request", { status: 422 }) : Response.json(result());
   });
   assert.equal((await predictBundle(modelBundle(), "http://model.test", 1000)).prediction.scoreKind, "sample_relative");
   fail = true;
   await assert.rejects(predictBundle(modelBundle(), "http://model.test", 1000), /HTTP 422/);
+});
+
+test("scores independent points and rejects a mismatched compact response", async t => {
+  const b = modelBundle();
+  const hourly = b.weather_grid.samples[0]!.hourly;
+  const points = [34, 35, 36].map(latitude => ({ latitude, longitude: -118, elevation_m: 100, hourly }));
+  let body: Record<string, unknown> = { updatedAt: b.observation_time, prediction: result().prediction, probability: [0.1, 0.2, 0.3], uncertainty: [0, 0.5, 1] };
+  t.mock.method(globalThis, "fetch", async (url: string, init: RequestInit) => {
+    assert.equal(url, "http://model.test/predict/points");
+    assert.equal(JSON.parse(String(init.body)).points.length, 3);
+    return Response.json(body);
+  });
+  assert.deepEqual((await predictPoints(points, "http://model.test", 1000)).probability, [0.1, 0.2, 0.3]);
+  for (const change of [
+    { probability: [0.1, 0.2] }, { uncertainty: [0, 0.5, 1.5] }, { updatedAt: "never" },
+    { prediction: { ...result().prediction, windowStart: "2020-01-01T00:00:00Z", windowEnd: "2020-01-02T00:00:00Z" } },
+  ]) {
+    body = { ...body, ...change };
+    await assert.rejects(predictPoints(points, "http://model.test", 1000));
+    body = { updatedAt: b.observation_time, prediction: result().prediction, probability: [0.1, 0.2, 0.3], uncertainty: [0, 0.5, 1] };
+  }
 });
 
 test("Express returns model cells and preserves observations on inference failure", async t => {

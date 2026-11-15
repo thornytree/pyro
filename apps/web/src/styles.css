@@ -26,7 +26,9 @@ body,
   position: relative;
 }
 
-.map {
+/* Two classes: MapLibre's own stylesheet arrives later with the lazy map chunk
+   and sets `position: relative` on the container, which must not win. */
+.app .map {
   position: absolute;
   inset: 0;
 }
@@ -403,4 +405,38 @@ button:disabled {
 
 .swatch.outline.dashed {
   border-style: dashed;
+}
+
+/* Heat-map overlay vs the base view beneath it; sits under the mode banner. */
+.view-switch {
+  position: absolute;
+  top: 44px;
+  left: 50%;
+  z-index: 1;
+  transform: translateX(-50%);
+  grid-template-columns: none;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  margin: 0;
+  background: var(--panel);
+}
+
+.view-switch button {
+  padding: 5px 14px;
+  white-space: nowrap;
+}
+
+@media (max-width: 600px) {
+  .view-switch {
+    top: 126px;
+  }
+}
+
+/* Shown while the map code is still loading. */
+.map-loading {
+  display: grid;
+  place-items: center;
+  color: var(--text);
+  opacity: 0.6;
+  font-size: 14px;
 }

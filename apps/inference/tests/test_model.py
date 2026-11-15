@@ -103,6 +103,31 @@ def test_api_loads_artifact_once_and_returns_geographic_scores(artifact):
         assert client.post("/predict", json=bad).status_code == 422
 
 
+def test_points_are_scored_compactly_and_agree_with_the_bundle_route(artifact):
+    source = bundle()
+    hours = source["weather_grid"]["samples"][0]["hourly"]
+    points = [{"latitude": lat, "longitude": lon, "elevation_m": 100, "hourly": hours}
+              for lat, lon in ((34.05, -118.25), (36.0, -119.5))]
+    with TestClient(create_app(artifact)) as client:
+        response = client.post("/predict/points", json={"points": points})
+        assert response.status_code == 200, response.text
+        result = response.json()
+        assert len(result["probability"]) == len(result["uncertainty"]) == 2
+        assert all(0 <= value <= 1 for value in result["probability"] + result["uncertainty"])
+        assert result["prediction"]["nativeCellCount"] == 2
+        assert result["prediction"]["windowStart"].startswith("2025-07-01T00:00:00")
+        # The first point is the bundle's region: same native cell, same weather, same score.
+        cell = client.post("/predict", json=source).json()["cells"]["features"][0]["properties"]
+        assert result["probability"][0] == pytest.approx(cell["probability"], abs=1e-4)
+        assert result["uncertainty"][0] == pytest.approx(cell["uncertainty"], abs=1e-4)
+
+        assert client.post("/predict/points", json={"points": []}).status_code == 422
+        outside = [{**points[0], "latitude": 10.0}]
+        assert client.post("/predict/points", json={"points": outside}).status_code == 422
+        shifted = [points[0], {**points[1], "hourly": hours[1:] + [{**hours[0], "time": "2025-07-02T00:00:00+00:00"}]}]
+        assert client.post("/predict/points", json={"points": shifted}).status_code == 422
+
+
 def compiled(directory, rows=120):
     """A tiny table in the compiled layout: three chronological splits and column roles."""
     rng = np.random.default_rng(2)

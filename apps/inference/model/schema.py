@@ -88,3 +88,23 @@ class PredictionBundle(BaseModel):
         if not (b.south <= p.latitude <= b.north and b.west <= p.longitude <= b.east):
             raise ValueError("Selected point must be inside the prediction region")
         return self
+
+
+class PointSample(Location):
+    """One location with its own forecast; scored as the native cell that contains it."""
+    elevation_m: FiniteFloat
+    hourly: list[Hour] = Field(min_length=24, max_length=72)
+
+
+class PointsRequest(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    points: list[PointSample] = Field(min_length=1, max_length=3000)
+
+    @model_validator(mode="after")
+    def shared_window(self):
+        reference = [hour.time for hour in self.points[0].hourly[:24]]
+        if any(b - a != timedelta(hours=1) for a, b in zip(reference, reference[1:])):
+            raise ValueError("Weather must contain consecutive hourly forecasts")
+        if any([hour.time for hour in point.hourly[:24]] != reference for point in self.points[1:]):
+            raise ValueError("Points must share a forecast window")
+        return self

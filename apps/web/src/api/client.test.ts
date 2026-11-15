@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { ApiError, createStatePreviewFetcher, createTileFetcher } from "./client";
+import { ApiError, createStateHeatmapFetcher, createTileFetcher } from "./client";
 import { toTileResponse } from "../../../orchestrator/src/tile-response";
 import { makeBundle } from "../../../orchestrator/tests/fixtures/bundle";
 import { LIVE } from "../lib/mode";
@@ -106,37 +106,47 @@ describe("createTileFetcher", () => {
   });
 });
 
-describe("createStatePreviewFetcher", () => {
-  const preview = {
+describe("createStateHeatmapFetcher", () => {
+  const heatmap = {
     stateId: "06",
-    updatedAt: null,
-    tiles: { type: "FeatureCollection", features: [] },
+    status: "ready",
+    bounds: [-124.4, 32.5, -114.1, 42],
+    updatedAt: "2026-11-14T12:00:00Z",
+    grid: { rows: 1, columns: 2, spacingKm: 40, probability: [0.4, null], uncertainty: [0.1, null] },
+    detections: { type: "FeatureCollection", features: [] },
   };
 
-  it("requests /states/{fips}/preview and returns the preview", async () => {
-    const fetchImpl = fetchReturning(preview);
-    const result = await createStatePreviewFetcher("http://api.test", fetchImpl)("06", LIVE);
-    expect(result).toEqual(preview);
-    expect(String(fetchImpl.mock.calls[0]?.[0])).toBe("http://api.test/states/06/preview");
+  it("requests /states/{fips}/heatmap and returns the grid", async () => {
+    const fetchImpl = fetchReturning(heatmap);
+    const result = await createStateHeatmapFetcher("http://api.test", fetchImpl)("06", LIVE);
+    expect(result).toEqual(heatmap);
+    expect(String(fetchImpl.mock.calls[0]?.[0])).toBe("http://api.test/states/06/heatmap");
   });
 
-  it("asks /history/states/{fips}/preview with the date for a past day", async () => {
-    const fetchImpl = fetchReturning(preview);
-    await createStatePreviewFetcher("http://api.test", fetchImpl)("06", {
+  it("accepts a detections-only response", async () => {
+    const observed = { ...heatmap, status: "observed", updatedAt: null, grid: null };
+    await expect(
+      createStateHeatmapFetcher("http://api.test", fetchReturning(observed))("06", LIVE),
+    ).resolves.toEqual(observed);
+  });
+
+  it("makes no request for a past day: there is no statewide archive", async () => {
+    const fetchImpl = fetchReturning(heatmap);
+    const result = await createStateHeatmapFetcher("http://api.test", fetchImpl)("06", {
       kind: "historical",
       date: "2021-08-20",
     });
-    expect(String(fetchImpl.mock.calls[0]?.[0])).toBe(
-      "http://api.test/history/states/06/preview?date=2021-08-20",
-    );
+    expect(result).toBeNull();
+    expect(fetchImpl).not.toHaveBeenCalled();
   });
 
-  it("throws ApiError on a non-2xx response or a bad body", async () => {
-    await expect(
-      createStatePreviewFetcher("http://api.test", fetchReturning({}, 500))("06", LIVE),
-    ).rejects.toMatchObject({ status: 500 });
-    await expect(
-      createStatePreviewFetcher("http://api.test", fetchReturning({ stateId: 6 }))("06", LIVE),
-    ).rejects.toBeInstanceOf(ApiError);
+  it("rejects a failed response, another state and a malformed grid", async () => {
+    const fetcher = (body: unknown, status = 200) =>
+      createStateHeatmapFetcher("http://api.test", fetchReturning(body, status))("06", LIVE);
+    await expect(fetcher({}, 500)).rejects.toBeInstanceOf(ApiError);
+    await expect(fetcher({ ...heatmap, stateId: "08" })).rejects.toThrow(/schema/);
+    await expect(fetcher({ ...heatmap, grid: { ...heatmap.grid, probability: [0.4] } })).rejects.toThrow(/schema/);
+    await expect(fetcher({ ...heatmap, grid: { ...heatmap.grid, probability: [0.4, 1.2] } })).rejects.toThrow(/schema/);
+    await expect(fetcher({ ...heatmap, grid: null })).rejects.toThrow(/schema/);
   });
 });

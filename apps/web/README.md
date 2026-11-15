@@ -4,7 +4,7 @@ The website: interactive US heat map of current and predicted wildfires.
 
 - Sends `lat`, `long` to `apps/orchestrator` (`GET /tiles`). Base URL comes from `VITE_ORCHESTRATOR_URL`.
 - Will render model output from `apps/inference`, relayed by the orchestrator. Until that exists:
-  - **Against the orchestrator** (`VITE_USE_MOCK=false`): a tile shows real FIRMS detections and, when the Python baseline responds, a daily detection-score heat map. Model failures retain source observations. The state preview is empty. Historical replay serves sparse held-out cell-days from the Python archive. Use “Open archived fire-detection example” to open an available date/location. The panel shows source data for the clicked region and offers its JSON download.
+  - **Against the orchestrator** (`VITE_USE_MOCK=false`): a tile shows real FIRMS detections and, when the Python baseline responds, a daily detection-score heat map. Model failures retain source observations. Opening a state draws a heat map of the whole state from `GET /states/{fips}/heatmap`. Historical replay serves sparse held-out cell-days from the Python archive. Use “Open archived fire-detection example” to open an available date/location. The panel shows source data for the clicked region and offers its JSON download.
   - **Mock** (`VITE_USE_MOCK=true`): every feature works on generated data, including cells, spread and historical mode.
 
 ## Run
@@ -23,10 +23,12 @@ Opens on port 5173. With `VITE_USE_MOCK=true` the app renders generated tiles wi
 
 0. **Location.** On load the browser asks for the user's location. If they allow it and the point is in a CONUS state, that state opens (unless they already opened one) and a blue dot marks them. "Use my location" asks again. The tile itself is not loaded, because loading a tile activates it.
 1. **National view.** Hovering a state enlarges it (scaled 8% about its centre in Web Mercator, with a drop shadow; instant if the user prefers reduced motion). Clicking opens it, and so does zooming in one level past the national framing (the hovered state, or the one at the centre of the view).
-2. **State view.** The map frames the state, dims everything else and loads a coarse preview: one square per 50 km tile, coloured by that tile's highest cell. Hovering outlines the tile a click would load. "Open the highest-risk tile" jumps to the hottest one. Clicking a neighbouring state switches to it; "All states", the "← US map" button on the map, Esc, or zooming out one level past the state's framing goes back. Thresholds are in `src/map/interaction.ts`.
-3. **Tile view.** Clicking inside the open state calls `GET /tiles` as before and draws the full-resolution cells (about 1 km in the mock) and detections in place of that tile's preview square. In live mode, cells at 80% or more get a predicted spread: outlines for 6, 12 and 24 h and an arrow along the head fire, with the weather behind it in the panel. "Show on map" hides them. Terrain is drawn underneath: an elevation tint, multidirectional hillshade and contour lines (metres; majors labelled when the basemap has glyphs). Cells and preview squares are drawn lighter in this view so the relief shows through. Terrain is off when `VITE_TERRAIN_DEM_URL` is empty.
+2. **State view.** The map frames the state, dims everything else and draws one heat map over the whole state, with every satellite detection in it. The scores arrive as a coarse grid and are interpolated in the browser into a single image clipped to the state outline (`src/lib/heatmap.ts`), so there are no tiles to wait for. The panel shows the peak score, the share of the state at 50 or more, the grid's resolution and "Open the highest-risk area". Clicking a neighbouring state switches to it; "All states", the "← US map" button on the map, Esc, or zooming out one level past the state's framing goes back. Thresholds are in `src/map/interaction.ts`.
+3. **Tile view.** Clicking inside the open state calls `GET /tiles` as before and draws the region's full-resolution cells (about 1 km in the mock) and detections over the statewide heat map. In live mode, cells at 80% or more get a predicted spread: outlines for 6, 12 and 24 h and an arrow along the head fire, with the weather behind it in the panel. "Show on map" hides them. Terrain is drawn underneath: an elevation tint, multidirectional hillshade and contour lines (metres; majors labelled when the basemap has glyphs). Cells are drawn lighter in this view so the relief shows through. Terrain is off when `VITE_TERRAIN_DEM_URL` is empty.
 
-4. **Mode switch.** "Live / predictive" or "Historical" at the top of the panel. Historical adds a date field and day-step buttons (1 Nov 2000, the start of the FIRMS archive, to yesterday). Switching keeps the open state and tile and reloads them in the new mode, so one place can be compared across modes. A banner over the map always names the mode and day. The mode is in the URL (`?mode=historical&date=2021-08-20`) so a replay can be shared; a bad date falls back to the nearest valid one.
+4. **View switch.** The control at the top of the map switches between "Heat map" (the model overlay: statewide heat map and a loaded region's cells) and the view beneath it: "Terrain" (elevation tint, hillshade and contours) and "Satellite" (aerial imagery from `VITE_SATELLITE_TILES_URL`). Detections, spread outlines and perimeters stay visible in every view. A base view that is not configured is left out; with neither, "Map only" shows the plain basemap.
+
+5. **Mode switch.** "Live / predictive" or "Historical" at the top of the panel. Historical adds a date field and day-step buttons (1 Nov 2000, the start of the FIRMS archive, to yesterday). Switching keeps the open state and tile and reloads them in the new mode, so one place can be compared across modes. A banner over the map always names the mode and day. The mode is in the URL (`?mode=historical&date=2021-08-20`) so a replay can be shared; a bad date falls back to the nearest valid one.
 
 A fixed north arrow and a metric / imperial scale bar sit bottom right (top left on phones). The map cannot be rotated or tilted, so north is always up and the scale bar, measured at the centre of the view, stays accurate across it.
 
@@ -35,9 +37,10 @@ A fixed north arrow and a metric / imperial scale bar sit bottom right (top left
 - `src/config.ts`: reads and validates `VITE_*` variables. Nothing else touches `import.meta.env`.
 - `src/api/types.ts`: the proposed tile contract (below).
 - `src/api/client.ts`: orchestrator client. `src/api/mock.ts`: generated tiles with the same shape.
+- `src/lib/heatmap.ts`: renders the statewide score grid to an image and summarizes it.
 - `src/map/`: MapLibre map and layer styling. `terrain.ts` builds the DEM and contour sources and layers.
 - `src/components/`: side panel, mode switch, legend and map HUD (compass, scale bar).
-- `src/lib/`: map modes and URL state (`mode.ts`), spread ellipse geometry (`spread.ts`), scale bar maths (`scale.ts`), CONUS bounds pre-check, detection age helpers, state outlines (`states.ts`), geometry helpers (`geo.ts`), preview summary.
+- `src/lib/`: map modes and URL state (`mode.ts`), spread ellipse geometry (`spread.ts`), scale bar maths (`scale.ts`), CONUS bounds pre-check, detection age helpers, state outlines (`states.ts`), geometry helpers (`geo.ts`).
 
 ## Map modes
 
@@ -48,7 +51,7 @@ Decision 3 asks for live and historical views to be labelled differently. Both a
 | Cells | Current burn probability | Model hindcast for that day |
 | Detections | Last 24 h, aged from now | That day, aged from the end of the day |
 | Overlay | Predicted spread around extreme-risk cells | Observed perimeters (western US, 2020 to 2024: Mendeley) |
-| Routes | `GET /tiles`, `GET /states/{fips}/preview` | `GET /history/tiles`, `GET /history/states/{fips}/preview` (read-only) |
+| Routes | `GET /tiles`, `GET /states/{fips}/heatmap` | `GET /history/tiles` (read-only). No statewide heat map against the real archive; the mock generates one. |
 | Activates tiles | Yes (decision 2) | Never |
 
 Mode logic (URL parsing, date range, the reference time detections are aged from) is in `src/lib/mode.ts`; the switch is `src/components/ModeSwitch.tsx`.
@@ -88,32 +91,38 @@ Geometry is GeoJSON in EPSG:4326 so the web app does not depend on the model gri
 
 Implemented historical route: `GET {VITE_ORCHESTRATOR_URL}/history/tiles?lat=&long=&date=YYYY-MM-DD` would return the same shape for that UTC day, with `perimeters` instead of `spread` and `drivers`. It is a separate route so the orchestrator can serve it read-only from the archive and never activate a tile.
 
-`GET {VITE_ORCHESTRATOR_URL}/states/{fips}/preview` (two-digit state FIPS code, e.g. `06`) returns:
+`GET {VITE_ORCHESTRATOR_URL}/states/{fips}/heatmap` (two-digit state FIPS code, e.g. `06`) returns:
 
 | Field | Type | Note |
 |---|---|---|
 | `stateId` | string | The FIPS code requested. |
-| `updatedAt` | ISO 8601 string or null | Newest model output among the tiles. |
-| `tiles` | GeoJSON FeatureCollection of Polygons | One feature per 50 km tile overlapping the state. Properties: `tileId` (same ID as `GET /tiles`), `peakProbability` (0 to 1, or null if the tile has no output yet), `meanUncertainty` (0 to 1 or null). |
+| `status` | `"ready"` or `"observed"` | `observed`: detections only, `grid` is null. |
+| `bounds` | `[west, south, east, north]` | The grid's extent: the state's bounding box. |
+| `updatedAt` | ISO 8601 string or null | When the scores were produced. |
+| `grid` | object or null | `rows`, `columns`, `spacingKm` and two row-major arrays (north to south, west to east), `probability` and `uncertainty`, 0 to 1 or `null` where nothing was scored. |
+| `detections` | GeoJSON FeatureCollection of Points | FIRMS detections inside the state; same properties as a tile's. |
+| `prediction`, `inference` | objects, optional | As for a tile. |
+| `sourceFailures` | array, optional | A failed FIRMS fetch: `source` and a safe `message`. |
 
-Tiles with `null` values are drawn grey ("no model output yet"). The preview is read-only: it must not activate tiles. The proposed `GET /history/states/{fips}/preview?date=YYYY-MM-DD` would return the same shape for a past day. It currently returns an empty preview.
+The grid is compact on purpose: a few hundred numbers instead of thousands of polygons. The browser interpolates between points and clips to the state outline. Opening a state never triggers the regional five-provider fetch. In historical mode the client makes no statewide request, because the real archive is sparse samples; the panel says so.
 
 ## Caveats
 
 - **Mock data is not real data.** With `VITE_USE_MOCK=true` every number on screen is generated (`src/api/mock.ts`). The panel shows a "mock data" badge. Do not demo it as model output.
-- **A statewide preview conflicts with decision 2 as written.** Weather and the model run only for active tiles, so most preview squares would have no output (grey) on a real backend. Options: show FIRMS detection density for inactive tiles, run a cheap coarse model nationwide, or accept a mostly grey preview. Needs a decision before the orchestrator implements the endpoint.
+- **The statewide heat map is an overview.** The orchestrator scores a few hundred points per state (about 47 km apart in California, 10 km in the smallest states) and the browser interpolates between them. Local detail comes from clicking a region. See `apps/orchestrator/README.md` for the point budget and cache.
 - **State outlines are bundled** from `us-atlas` (Census Bureau 1:10m, about 110 kB). States are matched by FIPS code; Alaska, Hawaii and territories are left out (decision 7).
-- **The mock preview is built in the browser** from the same generated tiles as `GET /tiles`, so its numbers match the full tile. Texas takes about 30 ms.
+- **The mock heat map is built in the browser** from the same generated tiles as `GET /tiles` (the mean of each 5 x 5 block of cells), so it matches a clicked region. Each mock tile has its own hotspot, which is why the mock heat map looks blocky. A test keeps Texas, the largest, under 400 ms.
 - **Mock tiles are not the real grid.** The mock snaps to a 0.5 degree lat/long grid with 50 x 50 cells (about 1 km) and IDs like `mock-79_-223`. Live requests use centered 300-square-mile regions, as requested for the current prototype.
-- **First model is experimental.** Express relays a trained daily FIRMS-detection baseline. Its sample-relative scores are not calibrated burn probabilities; native model cells are 10 km even though the display grid is finer. The UI labels the score accordingly. Statewide previews remain empty.
+- **First model is experimental.** Express relays a trained daily FIRMS-detection baseline. Its sample-relative scores are not calibrated burn probabilities; native model cells are 10 km even though the display grid is finer. The UI labels the score accordingly.
 - **Historical coverage is sparse.** Real replay uses held-out sampled cell-days and retrospective weather. It returns scores and full-cell detection counts, with empty exact-hotspot and perimeter layers. Missing area/date samples return a clear error. Spread remains mock-only.
 - **The CONUS check is a bounding box** (`src/lib/conus.ts`). It accepts parts of Canada, Mexico and ocean. The orchestrator must do the real validation.
 - **Basemap not verified end to end.** The overlay was tested against a blank local style because the build sandbox could not reach OpenFreeMap. Confirm the example style URL loads, and read OpenFreeMap's terms before a public launch.
 - **Terrain not verified with the real basemap.** Checked in a headless browser against a blank style, so contour labels (which borrow the basemap's font and glyphs) were not seen. Confirm they render with OpenFreeMap. The elevation credit is in the panel footer, not MapLibre's attribution control; check the DEM provider's terms before a public launch.
-- **Terrain is extra network load.** The tile view fetches DEM tiles (about 20 to 40 PNGs per view) and generates contours on a worker. It is only drawn in the tile view.
+- **Terrain is extra network load.** It fetches DEM tiles (about 20 to 40 PNGs per view) and generates contours on a worker. It is only drawn in the terrain view and under a loaded region.
+- **Satellite imagery not verified end to end.** The example URL is the USGS National Map imagery service; the build sandbox could not reach it. Confirm it loads and read its terms before a public launch.
 - **`.env` is required.** The app shows an error page if `VITE_MAP_STYLE_URL` is missing (or `VITE_ORCHESTRATOR_URL` when not mocking). There are no built-in defaults, by design.
 - **MapLibre v6 worker.** MapLibre finds its web worker relative to its own module URL, which Vite rewrites. `src/map/MapView.tsx` imports the worker with `?url` and calls `setWorkerUrl`. Removing that breaks the map with "Worker failed to load".
-- **Bundle size.** About 1.3 MB of JS (370 kB gzipped), nearly all MapLibre. Lazy-load the map if initial load time matters.
+- **Bundle size.** The map is loaded lazily: the first chunk is about 385 kB of JS (125 kB gzipped) and paints the panel; MapLibre follows in its own 1.1 MB chunk (310 kB gzipped).
 - **Payload size.** A mock tile is now 2,500 GeoJSON polygons, about 0.5 MB uncompressed, and renders without trouble. At 375 m (about 18,000 cells per tile) it would need a raster or a compact array format instead.
 - **Spread is ahead of the model.** The model's first target is burn probability (decision 3); nothing on the inference side predicts spread yet. The outlines on screen come from a mock formula. Keep the "experimental" label until a real spread model, checked against the historical perimeters, replaces it.
 - **Weather is coarser than the cells.** Weather is sampled every 10 km per active tile (`apps/orchestrator/src/fan-out/meteo.ts`), so 1 km cells and single-digit-mile spread rely on terrain and fuels (LANDFIRE, 30 m) for detail below that. Wind direction near ridges and canyons can differ a lot from a 10 km sample.
@@ -143,8 +152,8 @@ upstream credential or requested historical date is authorized/available.
 ## Selected-area integration contract
 
 The route is unchanged: first open a state, then click inside it to send that exact
-point as `lat` and `long` to `GET /tiles`. Opening a state requests only its preview;
-it does not fetch weather or activate the optional scheduler. Live requests call
+point as `lat` and `long` to `GET /tiles`. Opening a state requests only its heat map
+(cached per state on the server); it does not run the regional five-provider fetch. Live requests call
 Express's request-driven `fanOutEntry`, not the fixed-50-km `requestTileAt` helper.
 The selected point is the centre of a 300-square-mile region, not the whole state
 or the mock's snapped 0.5-degree tile. The map frames the returned `bounds`.
@@ -167,8 +176,8 @@ settings. Prediction cells are present only when the model returns a validated r
 
 Error responses retain `{error: {code, message, source?, reason?, upstreamStatus?}}`.
 The API client now shows the safe backend message and preserves its code/source,
-instead of displaying only an HTTP number. State-preview responses must match the
-requested state FIPS code. A previous point/mode request is still aborted when a
+instead of displaying only an HTTP number. State heat-map responses must match the
+requested state FIPS code and grid dimensions. A previous point/mode request is still aborted when a
 new selection is made, so older responses do not replace the active selection.
 
 Historical replay is connected to the real local archive. Spread simulations remain available in **mock mode**. Historical shared URLs preserve their date and use the archive routes; current detections are never presented as past observations.
@@ -181,7 +190,7 @@ only in `apps/orchestrator/.env`.
 Validation includes a real local HTTP contract test using the frontend API client,
 Express route parsing/serialization and a stubbed upstream fan-out. It checks two
 selected locations, the 300-square-mile extent, GeoJSON coordinate order, full
-bundle acceptance, empty previews, and rejected out-of-area points. All API calls
+bundle acceptance, the state heat-map route, and rejected out-of-area points. All API calls
 to external providers in this test are stubbed.
 
 Latest live-provider smoke check: the real client reached Express and received a

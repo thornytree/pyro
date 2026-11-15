@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { conusStates } from "../lib/states";
+import { LIVE } from "../lib/mode";
+import { conusStates, stateAt } from "../lib/states";
 import { EXTREME_PROBABILITY, kmToMiles } from "../lib/spread";
-import { buildMockStatePreview, buildMockTile, CELLS_PER_SIDE, MAX_HEAD_KM, mockRateKmh } from "./mock";
+import { buildMockStateHeatmap, buildMockTile, CELLS_PER_SIDE, MAX_HEAD_KM, mockRateKmh } from "./mock";
 
 const now = new Date("2026-11-14T12:00:00Z");
 
@@ -124,7 +125,7 @@ describe("historical tiles", () => {
   });
 });
 
-describe("buildMockStatePreview", () => {
+describe("buildMockStateHeatmap", () => {
   const states = conusStates();
   const byName = (name: string) => {
     const state = states.find((s) => s.properties.name === name);
@@ -132,45 +133,66 @@ describe("buildMockStatePreview", () => {
     return state;
   };
 
-  it("only includes tiles that overlap the state, with values in range", () => {
+  it("covers the state's bounding box with values in range and gaps outside the state", () => {
     const colorado = byName("Colorado");
-    const preview = buildMockStatePreview(colorado, now);
-    expect(preview.stateId).toBe("08");
-    // Colorado is about 7 x 4 degrees: 14 x 8 half-degree tiles, plus edges.
-    expect(preview.tiles.features.length).toBeGreaterThanOrEqual(112);
-    expect(preview.tiles.features.length).toBeLessThanOrEqual(135);
-    for (const { properties } of preview.tiles.features) {
-      expect(properties.peakProbability).toBeGreaterThanOrEqual(0);
-      expect(properties.peakProbability).toBeLessThanOrEqual(1);
+    const heatmap = buildMockStateHeatmap(colorado, now);
+    expect(heatmap.stateId).toBe("08");
+    expect(heatmap.status).toBe("ready");
+    const grid = heatmap.grid!;
+    // Colorado is about 7 x 4 degrees: 140 x 80 blocks of 0.05 degrees.
+    expect(grid.columns).toBeGreaterThanOrEqual(140);
+    expect(grid.rows).toBeGreaterThanOrEqual(80);
+    expect(grid.probability).toHaveLength(grid.rows * grid.columns);
+    expect(grid.uncertainty).toHaveLength(grid.rows * grid.columns);
+    for (const value of grid.probability) {
+      if (value !== null) expect(value >= 0 && value <= 1).toBe(true);
+    }
+    // Colorado fills its box; Florida leaves most of its box as sea.
+    expect(grid.probability.filter((v) => v === null).length).toBeLessThan(0.1 * grid.probability.length);
+    const florida = buildMockStateHeatmap(byName("Florida"), now).grid!;
+    expect(florida.probability.filter((v) => v === null).length).toBeGreaterThan(0.4 * florida.probability.length);
+  });
+
+  it.each([LIVE, { kind: "historical", date: "2021-08-20" } as const])(
+    "agrees with the full tile ($kind)",
+    (mode) => {
+      const point = { lat: 39.25, long: -105.75 };
+      const tile = buildMockTile(point, now, mode);
+      const heatmap = buildMockStateHeatmap(byName("Colorado"), now, mode);
+      const grid = heatmap.grid!;
+      const [west, , , north] = heatmap.bounds;
+      // The block holding the tile's south-west corner: the mean of its 5 x 5 cells.
+      const column = Math.round((tile.bounds[0] - west) / 0.05);
+      const row = Math.round((north - tile.bounds[1]) / 0.05) - 1;
+      const cells = tile.cells.features.filter(({ geometry }) => {
+        const [long = 0, lat = 0] = geometry.coordinates[0]?.[0] ?? [];
+        return long < tile.bounds[0] + 0.0499 && lat < tile.bounds[1] + 0.0499;
+      });
+      expect(cells).toHaveLength(25);
+      const mean = cells.reduce((sum, f) => sum + f.properties.probability, 0) / 25;
+      expect(grid.probability[row * grid.columns + column]).toBeCloseTo(mean, 10);
+    },
+  );
+
+  it("differs between days and puts detections inside the state", () => {
+    const texas = byName("Texas");
+    const first = buildMockStateHeatmap(texas, now, { kind: "historical", date: "2021-08-20" });
+    const second = buildMockStateHeatmap(texas, now, { kind: "historical", date: "2021-08-21" });
+    expect(first.grid!.probability).not.toEqual(second.grid!.probability);
+    expect(first.detections.features.length).toBeGreaterThan(0);
+    for (const { geometry } of first.detections.features) {
+      expect(stateAt(states, geometry.coordinates[1] ?? 0, geometry.coordinates[0] ?? 0)).toBe(texas);
     }
   });
 
-  it("agrees with the full tile for an interior tile", () => {
-    const point = { lat: 39.25, long: -105.75 };
-    const tile = buildMockTile(point, now);
-    const preview = buildMockStatePreview(byName("Colorado"), now);
-    const coarse = preview.tiles.features.find((f) => f.properties.tileId === tile.tileId);
-    const peak = Math.max(...tile.cells.features.map((f) => f.properties.probability));
-    expect(coarse?.properties.peakProbability).toBe(peak);
-  });
-
-  it("agrees with the full tile in historical mode", () => {
-    const point = { lat: 39.25, long: -105.75 };
-    const mode = { kind: "historical", date: "2021-08-20" } as const;
-    const tile = buildMockTile(point, now, mode);
-    const preview = buildMockStatePreview(byName("Colorado"), now, mode);
-    const coarse = preview.tiles.features.find((f) => f.properties.tileId === tile.tileId);
-    const peak = Math.max(...tile.cells.features.map((f) => f.properties.probability));
-    expect(coarse?.properties.peakProbability).toBe(peak);
-  });
-
-  it("finds tiles for a very small area", () => {
-    expect(buildMockStatePreview(byName("District of Columbia"), now).tiles.features.length).toBeGreaterThan(0);
+  it("has values for a very small area", () => {
+    const grid = buildMockStateHeatmap(byName("District of Columbia"), now).grid!;
+    expect(grid.probability.some((v) => v !== null)).toBe(true);
   });
 
   it("is quick enough for the largest state", () => {
     const start = performance.now();
-    buildMockStatePreview(byName("Texas"), now);
-    expect(performance.now() - start).toBeLessThan(250);
+    buildMockStateHeatmap(byName("Texas"), now);
+    expect(performance.now() - start).toBeLessThan(400);
   });
 });

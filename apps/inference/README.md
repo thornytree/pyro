@@ -14,7 +14,12 @@ uv run --directory apps/inference uvicorn app:app --host 127.0.0.1 --port 8000
 ```
 
 `GET http://127.0.0.1:8000/health` reports the loaded model version.
-`POST /predict` takes the existing orchestrator `dataBundle` directly as JSON.
+`POST /predict` takes the existing orchestrator `dataBundle` directly as JSON
+(only `location`, `observation_time` and `weather_grid` are read; the orchestrator sends just those).
+`POST /predict/points` takes `{points: [{latitude, longitude, elevation_m, hourly}]}` (up to 3000,
+sharing one 24 h window) and returns `probability` and `uncertainty` arrays in request order, with the same
+`prediction` metadata and no geometry. Each point is scored as the native 10 km cell containing it. The
+orchestrator uses it for the statewide heat map.
 The trained artifact is `model/artifacts/baseline.joblib`, ignored by Git. If it is
 missing, the service trains it on first start from `training/compiled`
 (`train.csv.gz`, `validation.csv.gz`, `test.csv.gz`, `columns.json`, committed) and

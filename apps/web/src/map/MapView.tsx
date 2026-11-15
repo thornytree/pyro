@@ -5,6 +5,7 @@ import {
   NavigationControl,
   setWorkerUrl,
   type GeoJSONSource,
+  type ImageSource,
   type MapMouseEvent,
 } from "maplibre-gl";
 // MapLibre locates its worker relative to its own module URL, which a bundler
@@ -13,12 +14,13 @@ import workerUrl from "maplibre-gl/dist/maplibre-gl-worker.mjs?url";
 import "maplibre-gl/dist/maplibre-gl.css";
 import mlcontour from "maplibre-contour";
 import type { FeatureCollection } from "geojson";
-import type { LatLong, StatePreview, TileResponse } from "../api/types";
+import type { DetectionCollection, LatLong, StateHeatmap, TileResponse } from "../api/types";
 import { MapHud } from "../components/MapHud";
-import type { TerrainConfig } from "../config";
+import type { SatelliteConfig, TerrainConfig } from "../config";
 import { ageHours } from "../lib/age";
 import { CONUS_BOUNDS } from "../lib/conus";
-import { geometryBounds, maskOutside, scaleGeometry } from "../lib/geo";
+import { createPointTester, geometryBounds, maskOutside, scaleGeometry } from "../lib/geo";
+import { heatmapSize, renderHeatmap } from "../lib/heatmap";
 import { type MapMode, referenceTime } from "../lib/mode";
 import { metresPerPixel } from "../lib/scale";
 import { spreadArrow } from "../lib/spread";
@@ -29,20 +31,25 @@ import {
   CELLS_FILL_LAYER,
   CELLS_SOURCE,
   DETECTIONS_SOURCE,
+  HEATMAP_LAYER,
+  HEATMAP_OPACITY,
+  HEATMAP_SOURCE,
   LAYERS,
   LIFT_MS,
   LIFT_SCALE,
   LIFT_SOURCE,
+  MASK_LAYER,
   MASK_SOURCE,
   PERIMETER_SOURCE,
-  PREVIEW_FILL_LAYER,
-  PREVIEW_OPACITY,
-  PREVIEW_SOURCE,
+  PROBABILITY_STOPS,
+  SATELLITE_LAYER,
+  SATELLITE_SOURCE,
   SELECTED_SOURCE,
   SPREAD_ARROW_SOURCE,
   SPREAD_LAYER_IDS,
   SPREAD_SOURCE,
   STATES_FILL_LAYER,
+  STATE_DETECTIONS_SOURCE,
   STATES_SOURCE,
   TILE_SOURCE,
   USER_SOURCE,
@@ -68,7 +75,14 @@ const TILE_SOURCES = [
   SPREAD_ARROW_SOURCE,
   PERIMETER_SOURCE,
 ];
-const DATA_SOURCES = [...TILE_SOURCES, PREVIEW_SOURCE];
+const DATA_SOURCES = [...TILE_SOURCES, STATE_DETECTIONS_SOURCE];
+
+/**
+ * What the map shows. "heat" draws the model overlay (statewide heat map and a
+ * loaded region's cells); the others hide it to show what is underneath:
+ * shaded relief, aerial imagery, or the plain basemap.
+ */
+export type MapViewKind = "heat" | "terrain" | "satellite" | "map";
 const NATIONAL_PADDING = 24;
 const STATE_MAX_ZOOM = 8;
 const TILE_MAX_ZOOM = 9;
@@ -83,11 +97,15 @@ const CONUS: [number, number, number, number] = [
 
 interface Props {
   styleUrl: string;
-  /** Elevation drawn under the live heat map; null turns terrain off. */
+  /** Elevation for the terrain view and under a loaded region; null turns terrain off. */
   terrain: TerrainConfig | null;
+  /** Aerial imagery for the satellite view; null turns it off. */
+  satellite: SatelliteConfig | null;
+  view: MapViewKind;
   states: StateFeature[];
   selectedState: StateFeature | null;
-  preview: StatePreview | null;
+  /** Statewide scores and detections for `selectedState`. */
+  heatmap: StateHeatmap | null;
   tile: TileResponse | null;
   /** The mode `tile` was loaded in; sets the time detections are aged from. */
   mode: MapMode;
@@ -125,6 +143,20 @@ function rectangle([west, south, east, north]: number[]): FeatureCollection {
 
 function prefersReducedMotion(): boolean {
   return window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
+}
+
+/** Detections with the age their opacity is styled by. */
+function aged(detections: DetectionCollection, now: Date): FeatureCollection {
+  return {
+    type: "FeatureCollection",
+    features: detections.features.map((feature) => ({
+      ...feature,
+      properties: {
+        ...feature.properties,
+        ageHours: ageHours(feature.properties.acquiredAt, now),
+      },
+    })),
+  };
 }
 
 function point({ lat, long }: LatLong): FeatureCollection {
@@ -172,12 +204,28 @@ function setupTerrain(map: MapLibreMap, config: TerrainConfig) {
   for (const layer of terrainLayers(font)) map.addLayer(layer, beforeId);
 }
 
+/** Aerial imagery, hidden until the satellite view is chosen; labels stay on top. */
+function setupSatellite(map: MapLibreMap, config: SatelliteConfig) {
+  map.addSource(SATELLITE_SOURCE, {
+    type: "raster",
+    tiles: [config.tilesUrl],
+    tileSize: 256,
+    maxzoom: config.maxZoom,
+  });
+  map.addLayer(
+    { id: SATELLITE_LAYER, type: "raster", source: SATELLITE_SOURCE, layout: { visibility: "none" } },
+    firstSymbolLayerId(map.getStyle().layers),
+  );
+}
+
 export function MapView({
   styleUrl,
   terrain,
+  satellite,
+  view,
   states,
   selectedState,
-  preview,
+  heatmap,
   tile,
   mode,
   showSpread,
@@ -192,8 +240,8 @@ export function MapView({
   const [metresPerPx, setMetresPerPx] = useState<number | null>(null);
 
   // Handlers are bound once; they read the latest props through refs.
-  const latest = useRef({ states, selectedState, onSelectState, onClearState, onSelectPoint });
-  latest.current = { states, selectedState, onSelectState, onClearState, onSelectPoint };
+  const latest = useRef({ states, selectedState, view, onSelectState, onClearState, onSelectPoint });
+  latest.current = { states, selectedState, view, onSelectState, onClearState, onSelectPoint };
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -219,7 +267,6 @@ export function MapView({
     map.on("move", updateScale);
 
     let hoveredState: number | null = null;
-    let hoveredTile: string | null = null;
     let animation = 0;
 
     const setLift = (stateId: number | null) => {
@@ -260,26 +307,11 @@ export function MapView({
       setLift(id);
     };
 
-    const setHoveredTile = (id: string | null) => {
-      if (id === hoveredTile) return;
-      if (hoveredTile !== null) {
-        map.setFeatureState({ source: PREVIEW_SOURCE, id: hoveredTile }, { hover: false });
-      }
-      hoveredTile = id;
-      if (id !== null) map.setFeatureState({ source: PREVIEW_SOURCE, id }, { hover: true });
-    };
-
     const stateAt = (event: MapMouseEvent) =>
       map.queryRenderedFeatures(event.point, { layers: [STATES_FILL_LAYER] })[0];
 
     map.on("load", () => {
-      for (const id of DATA_SOURCES) {
-        map.addSource(id, {
-          type: "geojson",
-          data: EMPTY,
-          ...(id === PREVIEW_SOURCE && { promoteId: "tileId" }),
-        });
-      }
+      for (const id of DATA_SOURCES) map.addSource(id, { type: "geojson", data: EMPTY });
       map.addSource(STATES_SOURCE, {
         type: "geojson",
         data: { type: "FeatureCollection", features: latest.current.states },
@@ -287,6 +319,7 @@ export function MapView({
       for (const id of [MASK_SOURCE, SELECTED_SOURCE, LIFT_SOURCE, USER_SOURCE]) {
         map.addSource(id, { type: "geojson", data: EMPTY });
       }
+      if (satellite) setupSatellite(map, satellite);
       if (terrain) setupTerrain(map, terrain);
       for (const layer of LAYERS) map.addLayer(layer);
       updateScale();
@@ -297,19 +330,13 @@ export function MapView({
       const state = stateAt(event);
       const stateId = typeof state?.id === "number" ? state.id : null;
       const selected = latest.current.selectedState;
-      // In a state, hovering it highlights the tile a click would load.
       const inSelected = selected !== null && stateId === selected.id;
       setHoveredState(inSelected ? null : stateId);
-      const previewTile = inSelected
-        ? map.queryRenderedFeatures(event.point, { layers: [PREVIEW_FILL_LAYER] })[0]
-        : undefined;
-      setHoveredTile(typeof previewTile?.id === "string" ? previewTile.id : null);
       map.getCanvas().style.cursor = stateId === null ? "" : "pointer";
     });
 
     map.on("mouseout", () => {
       setHoveredState(null);
-      setHoveredTile(null);
       map.getCanvas().style.cursor = "";
     });
 
@@ -364,7 +391,7 @@ export function MapView({
       mapRef.current = null;
       map.remove();
     };
-  }, [styleUrl, terrain]);
+  }, [styleUrl, terrain, satellite]);
 
   // Open state: mask the rest of the map, outline it and frame it.
   useEffect(() => {
@@ -392,10 +419,85 @@ export function MapView({
     );
   }, [selectedState, ready]);
 
+  // Statewide scores for the open state; a response for another state is ignored.
+  const stateHeatmap =
+    heatmap && selectedState && heatmap.stateId === selectedState.properties.fips ? heatmap : null;
+  const stateGrid = stateHeatmap?.grid ?? null;
+
+  // Statewide heat map: one image stretched over the state's bounding box.
   useEffect(() => {
-    if (!ready) return;
-    mapRef.current?.getSource<GeoJSONSource>(PREVIEW_SOURCE)?.setData(preview?.tiles ?? EMPTY);
-  }, [preview, ready]);
+    const map = mapRef.current;
+    if (!map || !ready) return;
+    map
+      .getSource<GeoJSONSource>(STATE_DETECTIONS_SOURCE)
+      ?.setData(stateHeatmap ? aged(stateHeatmap.detections, referenceTime(mode, new Date())) : EMPTY);
+    if (!stateHeatmap || !stateGrid || !selectedState) {
+      // Removed rather than hidden, so a stale image can never show for the next state.
+      if (map.getLayer(HEATMAP_LAYER)) map.removeLayer(HEATMAP_LAYER);
+      if (map.getSource(HEATMAP_SOURCE)) map.removeSource(HEATMAP_SOURCE);
+      return;
+    }
+    const [west, south, east, north] = stateHeatmap.bounds;
+    const size = heatmapSize(stateHeatmap.bounds, stateGrid.columns);
+    const pixels = renderHeatmap(
+      stateGrid,
+      stateHeatmap.bounds,
+      size,
+      createPointTester(selectedState.geometry),
+      PROBABILITY_STOPS,
+    );
+    const image = new ImageData(pixels, size.width, size.height);
+    const coordinates: [[number, number], [number, number], [number, number], [number, number]] = [
+      [west, north],
+      [east, north],
+      [east, south],
+      [west, south],
+    ];
+    const source = map.getSource<ImageSource>(HEATMAP_SOURCE);
+    if (source) {
+      source.updateImage({ image, coordinates });
+      return;
+    }
+    map.addSource(HEATMAP_SOURCE, { type: "image", coordinates });
+    map.getSource<ImageSource>(HEATMAP_SOURCE)?.updateImage({ image });
+    map.addLayer(
+      {
+        id: HEATMAP_LAYER,
+        type: "raster",
+        source: HEATMAP_SOURCE,
+        layout: { visibility: latest.current.view === "heat" ? "visible" : "none" },
+        paint: {
+          "raster-opacity": HEATMAP_OPACITY,
+          "raster-resampling": "linear",
+          "raster-fade-duration": 0,
+        },
+      },
+      MASK_LAYER,
+    );
+  }, [stateHeatmap, stateGrid, selectedState, mode, ready]);
+
+  // Which layers show: the heat overlay, or the base view under it.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !ready) return;
+    const show = (id: string, visible: boolean) => {
+      if (map.getLayer(id)) map.setLayoutProperty(id, "visibility", visible ? "visible" : "none");
+    };
+    const heat = view === "heat";
+    show(HEATMAP_LAYER, heat);
+    show(CELLS_FILL_LAYER, heat);
+    show(SATELLITE_LAYER, view === "satellite");
+    // Terrain is its own view, and also sits under a loaded region's cells,
+    // which are then lightened so the relief shows through.
+    const underCells = heat && tile !== null;
+    const terrainOn = map.getLayer(TERRAIN_LAYER_IDS[0]) !== undefined && (view === "terrain" || underCells);
+    for (const id of TERRAIN_LAYER_IDS) show(id, terrainOn);
+    map.setPaintProperty(
+      CELLS_FILL_LAYER,
+      "fill-opacity",
+      uncertaintyOpacity("uncertainty", CELL_OPACITY[terrainOn ? "overTerrain" : "plain"]),
+    );
+  }, [view, tile, stateGrid, ready]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -403,47 +505,16 @@ export function MapView({
     const set = (id: string, data: FeatureCollection) =>
       map.getSource<GeoJSONSource>(id)?.setData(data);
 
-    // The full-resolution tile replaces its coarse preview square.
-    map.setFilter(PREVIEW_FILL_LAYER, tile ? ["!=", ["get", "tileId"], tile.tileId] : null);
-
-    // Terrain shows only in the tile view, with the heat map lightened over it.
-    const overTerrain = tile !== null && map.getLayer(TERRAIN_LAYER_IDS[0]) !== undefined;
-    for (const id of TERRAIN_LAYER_IDS) {
-      if (map.getLayer(id)) {
-        map.setLayoutProperty(id, "visibility", overTerrain ? "visible" : "none");
-      }
-    }
-    const opacity = overTerrain ? "overTerrain" : "plain";
-    map.setPaintProperty(
-      CELLS_FILL_LAYER,
-      "fill-opacity",
-      uncertaintyOpacity("uncertainty", CELL_OPACITY[opacity]),
-    );
-    map.setPaintProperty(
-      PREVIEW_FILL_LAYER,
-      "fill-opacity",
-      uncertaintyOpacity("meanUncertainty", PREVIEW_OPACITY[opacity]),
-    );
     if (!tile) {
       for (const id of TILE_SOURCES) set(id, EMPTY);
       return;
     }
-    const now = referenceTime(mode, new Date());
     set(CELLS_SOURCE, tile.cells);
     set(TILE_SOURCE, rectangle(tile.bounds));
     set(SPREAD_SOURCE, tile.spread ?? EMPTY);
     set(SPREAD_ARROW_SOURCE, tile.spread ? spreadArrow(tile.spread) : EMPTY);
     set(PERIMETER_SOURCE, tile.perimeters ?? EMPTY);
-    set(DETECTIONS_SOURCE, {
-      type: "FeatureCollection",
-      features: tile.detections.features.map((feature) => ({
-        ...feature,
-        properties: {
-          ...feature.properties,
-          ageHours: ageHours(feature.properties.acquiredAt, now),
-        },
-      })),
-    });
+    set(DETECTIONS_SOURCE, aged(tile.detections, referenceTime(mode, new Date())));
     const [west, south, east, north] = tile.bounds;
     map.fitBounds(
       [west, south, east, north],

@@ -160,13 +160,21 @@ async function fetchFirmsArea(
   return normalizeFireAttributes(datasets);
 }
 
-/** Request-driven 300-square-mile region; retain the four MODIS/VIIRS feeds. */
+/** The four MODIS/VIIRS feeds for any bounding box (a region or a whole state). */
+export async function getFireAttributesIn(
+  bounds: BoundingBox,
+  options: { days?: number; mapKey?: string } = {},
+): Promise<FireAttributes> {
+  return fetchFirmsArea(bounds, sources.filter(source => source !== "LANDSAT_NRT"),
+    { ...options, days: options.days ?? 1 });
+}
+
+/** Request-driven 300-square-mile region. */
 async function getFireAttributes(
   lat: number, long: number,
   options: { days?: number; mapKey?: string } = {},
 ): Promise<FireAttributes> {
-  return fetchFirmsArea(createRegionBounds(lat, long), sources.filter(source => source !== "LANDSAT_NRT"),
-    { ...options, days: options.days ?? 1 });
+  return getFireAttributesIn(createRegionBounds(lat, long), options);
 }
 
 export default getFireAttributes

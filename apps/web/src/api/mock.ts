@@ -10,10 +10,9 @@ import type {
   FirmsSource,
   LatLong,
   PerimeterCollection,
-  PreviewTileCollection,
   SpreadCollection,
-  StatePreview,
-  StatePreviewFetcher,
+  StateHeatmap,
+  StateHeatmapFetcher,
   TileFetcher,
   TileResponse,
   WeatherDrivers,
@@ -323,78 +322,111 @@ export const mockTileFetcher: TileFetcher = async (point, mode) =>
   buildMockTile(point, new Date(), mode);
 
 /**
- * Coarse statewide view: one square per mock tile that overlaps the state,
- * valued from the cells inside it. Built from the same fields as
- * buildMockTile, so the preview and the full tile agree. State membership is
- * tested per 5 x 5 cell block rather than per cell, to stay fast.
+ * Statewide heat map on a 0.05 degree grid (one value per 5 x 5 block of mock
+ * cells, their mean), built from the same fields as buildMockTile so the
+ * state view and a clicked region agree. Blocks outside the state and its
+ * one-block rim are null, like the real route's unsampled cells.
  */
-export function buildMockStatePreview(
+export function buildMockStateHeatmap(
   state: StateFeature,
   now: Date,
   mode: MapMode = LIVE,
-): StatePreview {
-  const [west, south, east, north] = geometryBounds(state.geometry);
+): StateHeatmap {
   const blockDeg = TILE_DEG / BLOCKS_PER_SIDE;
+  const [w, s, e, n] = geometryBounds(state.geometry);
+  // Snap the extent to block edges so every grid cell is exactly one block.
+  const west = Math.floor(w / blockDeg);
+  const south = Math.floor(s / blockDeg);
+  const columns = Math.ceil(e / blockDeg) - west;
+  const rows = Math.ceil(n / blockDeg) - south;
   const isInside = createPointTester(state.geometry);
-  const tiles: PreviewTileCollection = { type: "FeatureCollection", features: [] };
+  const inside = new Uint8Array(rows * columns);
+  for (let row = 0; row < rows; row++) {
+    const lat = (south + rows - row - 0.5) * blockDeg;
+    for (let column = 0; column < columns; column++) {
+      inside[row * columns + column] = isInside((west + column + 0.5) * blockDeg, lat) ? 1 : 0;
+    }
+  }
+  const near = (row: number, column: number) => {
+    for (let r = Math.max(0, row - 1); r <= Math.min(rows - 1, row + 1); r++) {
+      for (let c = Math.max(0, column - 1); c <= Math.min(columns - 1, column + 1); c++) {
+        if (inside[r * columns + c]) return true;
+      }
+    }
+    return false;
+  };
 
-  for (let row = Math.floor(south / TILE_DEG); row <= Math.floor(north / TILE_DEG); row++) {
-    for (let col = Math.floor(west / TILE_DEG); col <= Math.floor(east / TILE_DEG); col++) {
-      const tw = col * TILE_DEG;
-      const ts = row * TILE_DEG;
-      const blocks: boolean[] = [];
-      let anyInside = false;
-      for (let by = 0; by < BLOCKS_PER_SIDE; by++) {
-        for (let bx = 0; bx < BLOCKS_PER_SIDE; bx++) {
-          const inside = isInside(tw + (bx + 0.5) * blockDeg, ts + (by + 0.5) * blockDeg);
-          blocks.push(inside);
-          anyInside ||= inside;
+  const fields = new Map<string, Field>();
+  const probability: Array<number | null> = new Array(rows * columns).fill(null);
+  const uncertainty: Array<number | null> = new Array(rows * columns).fill(null);
+  const detections: DetectionCollection = { type: "FeatureCollection", features: [] };
+  for (let row = 0; row < rows; row++) {
+    for (let column = 0; column < columns; column++) {
+      if (!near(row, column)) continue;
+      // Block position counted from the south-west, as mock tiles are.
+      const blockX = west + column;
+      const blockY = south + rows - row - 1;
+      const tileRow = Math.floor(blockY / BLOCKS_PER_SIDE);
+      const tileCol = Math.floor(blockX / BLOCKS_PER_SIDE);
+      const key = `${tileRow}_${tileCol}`;
+      let field = fields.get(key);
+      if (!field) {
+        field = buildField(tileRow, tileCol, mode);
+        fields.set(key, field);
+        // One detection at each strong hotspot that lies in the state.
+        const [long = 0, lat = 0] = cellPoint(field, field.hotX, field.hotY);
+        if (field.peak >= 0.7 && isInside(long, lat)) {
+          detections.features.push({
+            type: "Feature",
+            geometry: { type: "Point", coordinates: [long, lat] },
+            properties: {
+              source: SOURCES[fields.size % SOURCES.length] ?? "MODIS",
+              acquiredAt: new Date(
+                referenceTime(mode, now).getTime() - (fields.size % 20) * 3_600_000,
+              ).toISOString(),
+              confidence: field.peak,
+              frpMw: Math.round(field.peak * 80),
+            },
+          });
         }
       }
-      if (!anyInside) continue;
-
-      const field = buildField(row, col, mode);
-      let peak = 0;
-      let uncertaintySum = 0;
-      let count = 0;
-      for (let y = 0; y < CELLS_PER_SIDE; y++) {
-        for (let x = 0; x < CELLS_PER_SIDE; x++) {
-          const block =
-            Math.floor(y / CELLS_PER_BLOCK) * BLOCKS_PER_SIDE + Math.floor(x / CELLS_PER_BLOCK);
-          if (!blocks[block]) continue;
-          const i = y * CELLS_PER_SIDE + x;
-          peak = Math.max(peak, field.probability[i] ?? 0);
-          uncertaintySum += field.uncertainty[i] ?? 1;
-          count++;
+      const x0 = (blockX - tileCol * BLOCKS_PER_SIDE) * CELLS_PER_BLOCK;
+      const y0 = (blockY - tileRow * BLOCKS_PER_SIDE) * CELLS_PER_BLOCK;
+      let p = 0;
+      let u = 0;
+      for (let y = y0; y < y0 + CELLS_PER_BLOCK; y++) {
+        for (let x = x0; x < x0 + CELLS_PER_BLOCK; x++) {
+          p += field.probability[y * CELLS_PER_SIDE + x] ?? 0;
+          u += field.uncertainty[y * CELLS_PER_SIDE + x] ?? 1;
         }
       }
-
-      const te = tw + TILE_DEG;
-      const tn = ts + TILE_DEG;
-      tiles.features.push({
-        type: "Feature",
-        geometry: {
-          type: "Polygon",
-          coordinates: [[[tw, ts], [te, ts], [te, tn], [tw, tn], [tw, ts]]],
-        },
-        properties: {
-          tileId: field.tileId,
-          peakProbability: peak,
-          meanUncertainty: uncertaintySum / count,
-        },
-      });
+      const count = CELLS_PER_BLOCK * CELLS_PER_BLOCK;
+      probability[row * columns + column] = p / count;
+      uncertainty[row * columns + column] = u / count;
     }
   }
 
-  return { stateId: state.properties.fips, updatedAt: now.toISOString(), tiles };
+  return {
+    stateId: state.properties.fips,
+    status: "ready",
+    bounds: [
+      west * blockDeg,
+      south * blockDeg,
+      (west + columns) * blockDeg,
+      (south + rows) * blockDeg,
+    ],
+    updatedAt: referenceTime(mode, now).toISOString(),
+    grid: { rows, columns, spacingKm: blockDeg * 111.2, probability, uncertainty },
+    detections,
+  };
 }
 
-export function createMockStatePreviewFetcher(
+export function createMockStateHeatmapFetcher(
   findState: (stateId: string) => StateFeature | undefined,
-): StatePreviewFetcher {
+): StateHeatmapFetcher {
   return async (stateId, mode) => {
     const state = findState(stateId);
     if (!state) throw new Error(`Unknown state ${stateId}`);
-    return buildMockStatePreview(state, new Date(), mode);
+    return buildMockStateHeatmap(state, new Date(), mode);
   };
 }

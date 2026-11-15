@@ -9,6 +9,8 @@ import type { FanOutOptions } from "../src/fan-out/fan-out-entry.ts";
 const env = {
   FIRMS_MAP_KEY: "private-firms", EARTHDATA_TOKEN: "private-earthdata",
   DAYMET_START_DATE: "2020-07-01", DAYMET_END_DATE: "2020-07-31",
+  // Each request below must reach the stubbed fan-out; the cache has its own test.
+  TILE_CACHE_TTL_SECONDS: "0",
 };
 
 test("validates server settings without exposing credential values", () => {
@@ -18,9 +20,13 @@ test("validates server settings without exposing credential values", () => {
     { DAYMET_START_DATE: "2020-02-30" }, { DAYMET_END_DATE: "2019-01-01" },
     { DAYMET_END_DATE: "2023-01-01" }, { WEB_ORIGIN: "javascript:bad" },
     { LANDFIRE_VERSION: "wrong" }, { EARTHDATA_TOKEN: "  " },
+    { STATE_GRID_MAX_POINTS: "5" }, { STATE_CACHE_TTL_MINUTES: "0" }, { TILE_CACHE_TTL_SECONDS: "-1" },
   ]) assert.throws(() => readConfig({ ...env, ...override }));
   const config = readConfig(env);
   assert.equal(config.port, 3001);
+  assert.deepEqual(config.stateHeatmap, { maxPoints: 300, ttlMs: 180 * 60_000 });
+  assert.equal(config.tileCacheTtlMs, 0);
+  assert.equal(readConfig({ ...env, TILE_CACHE_TTL_SECONDS: "" }).tileCacheTtlMs, 300_000);
   assert.equal(config.defaults.forecastHours, 24);
   assert.ok(!JSON.stringify(config).includes("private-"));
 });
@@ -78,9 +84,8 @@ test("serves health, parses the web query, returns observations/bundle and sanit
   assert.equal(calls.length, count);
   assert.equal((await fetch(`${base}/tiles?lat=34&long=-118`, { headers: { Origin: "https://unknown.test" } })).status, 403);
   assert.equal((await fetch(`${base}/tiles`, { method: "OPTIONS", headers: { Origin: config.webOrigin } })).status, 204);
-  const preview = await (await fetch(`${base}/states/06/preview`)).json();
-  assert.deepEqual(preview, { stateId: "06", updatedAt: null, tiles: { type: "FeatureCollection", features: [] } });
-  assert.equal((await fetch(`${base}/states/02/preview`)).status, 404);
+  assert.equal((await fetch(`${base}/states/02/heatmap`)).status, 404);
+  assert.equal((await fetch(`${base}/states/06/preview`)).status, 404);
   assert.equal((await fetch(`${base}/unknown`)).status, 404);
   fail = true;
   const failed = await fetch(`${base}/tiles?lat=34.05&long=-118.25`);
@@ -94,4 +99,32 @@ test("serves health, parses the web query, returns observations/bundle and sanit
   assert.equal(diagnosed.error.source, "Open-Meteo");
   assert.equal(diagnosed.error.upstreamStatus, 404);
   assert.ok(!JSON.stringify(diagnosed).includes("private-"));
+});
+
+test("reuses a region's source bundle, but not one with a failed source, and compresses responses", async t => {
+  let calls = 0;
+  let failing = true;
+  const app = createApp(readConfig({ ...env, TILE_CACHE_TTL_SECONDS: "60" }), async () => {
+    calls++;
+    const bundle = makeBundle();
+    return failing ? { ...bundle, fire: null, source_failures: [{ source: "FIRMS" as const, reason: "TIMEOUT" as const, message: "FIRMS failed." }] } : bundle;
+  });
+  const server = app.listen(0, "127.0.0.1");
+  await new Promise<void>((resolve, reject) => { server.once("listening", resolve); server.once("error", reject); });
+  t.after(() => new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve())));
+  const address = server.address();
+  assert.ok(address && typeof address !== "string");
+  const url = `http://127.0.0.1:${address.port}/tiles?lat=34.05&long=-118.25`;
+
+  assert.equal((await (await fetch(url)).json()).bundle.fire, null);
+  failing = false;
+  const response = await fetch(url);
+  assert.equal(response.headers.get("content-encoding"), "gzip");
+  assert.equal((await response.json()).detections.features.length, 2);
+  assert.equal(calls, 2); // The degraded bundle was not kept.
+  await fetch(url);
+  await fetch(`${url}&forecastHours=24`); // Same resolved options as the default.
+  assert.equal(calls, 2);
+  await fetch(`${url}&forecastHours=12`);
+  assert.equal(calls, 3);
 });

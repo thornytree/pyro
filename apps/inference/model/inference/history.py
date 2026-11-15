@@ -14,6 +14,7 @@ class HistoryArchive:
     def __init__(self, path: Path, predictor):
         self.path, self.predictor = path, predictor
         self._data = None
+        self._examples = None
 
     @property
     def data(self):
@@ -22,12 +23,16 @@ class HistoryArchive:
         return self._data
 
     def examples(self):
-        # Every held-out fire cell-day, oldest first; the largest cell leads within a day.
-        rows = self.data[self.data.fire == 1].sort_values(
-            ["date", "label_n_detections", "cell_id"], ascending=[True, False, True])
-        return {"examples": [{"date": r.date, "lat": r.latitude, "long": r.longitude,
-                               "detectionCount": int(r.label_n_detections), "split": "test"}
-                              for r in rows.itertuples()]}
+        # The archive is immutable while the service runs, so build the list once.
+        if self._examples is None:
+            # Every held-out fire cell-day, oldest first; the largest cell leads within a day.
+            rows = self.data[self.data.fire == 1].sort_values(
+                ["date", "label_n_detections", "cell_id"], ascending=[True, False, True])
+            self._examples = {"examples": [
+                {"date": r.date, "lat": r.latitude, "long": r.longitude,
+                 "detectionCount": int(r.label_n_detections), "split": "test"}
+                for r in rows.itertuples()]}
+        return self._examples
 
     def tile(self, lat: float, lon: float, day: date):
         radius = 6371.0088

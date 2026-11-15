@@ -4,7 +4,9 @@ export const CELLS_SOURCE = "pyro-cells";
 export const DETECTIONS_SOURCE = "pyro-detections";
 export const TILE_SOURCE = "pyro-tile";
 export const STATES_SOURCE = "pyro-states";
-export const PREVIEW_SOURCE = "pyro-preview";
+export const HEATMAP_SOURCE = "pyro-heatmap";
+export const STATE_DETECTIONS_SOURCE = "pyro-state-detections";
+export const SATELLITE_SOURCE = "pyro-satellite";
 export const MASK_SOURCE = "pyro-mask";
 export const SELECTED_SOURCE = "pyro-selected-state";
 export const LIFT_SOURCE = "pyro-lift";
@@ -17,14 +19,17 @@ export const PERIMETER_SOURCE = "pyro-perimeters";
 export const SPREAD_LAYER_IDS = ["pyro-spread-fill", "pyro-spread-line", "pyro-spread-arrow"];
 
 export const STATES_FILL_LAYER = "pyro-states-fill";
-export const PREVIEW_FILL_LAYER = "pyro-preview-fill";
+export const HEATMAP_LAYER = "pyro-heatmap";
+export const SATELLITE_LAYER = "pyro-satellite";
+/** The statewide heat map is inserted beneath this layer, which dims everything outside the state. */
+export const MASK_LAYER = "pyro-mask";
 export const CELLS_FILL_LAYER = "pyro-cells-fill";
 
 /** How much a hovered state grows, and how long the grow animation takes. */
 export const LIFT_SCALE = 1.08;
 export const LIFT_MS = 140;
 
-/** Preview tiles with no model output yet. */
+/** Cells with no model output. */
 export const NO_DATA_COLOUR = "#5a5a66";
 
 /** Probability colour ramp, shared by the map layer and the legend. */
@@ -51,11 +56,12 @@ const probabilityColour = (property: string): ExpressionSpecification => [
 ];
 
 /**
- * Opacity [most certain, least certain]. Cells and preview squares are drawn
- * lighter over terrain so the relief and contours show through.
+ * Opacity [most certain, least certain]. Cells are drawn lighter over terrain
+ * so the relief and contours show through.
  */
 export const CELL_OPACITY = { plain: [0.8, 0.25], overTerrain: [0.62, 0.18] } as const;
-export const PREVIEW_OPACITY = { plain: [0.75, 0.3], overTerrain: [0.4, 0.15] } as const;
+/** The statewide image carries its own per-pixel fade for uncertainty (lib/heatmap.ts). */
+export const HEATMAP_OPACITY = 0.82;
 
 /** Fainter as uncertainty (0 to 1) rises; missing uncertainty counts as 1. */
 export const uncertaintyOpacity = (
@@ -69,6 +75,17 @@ export const uncertaintyOpacity = (
   certain,
   1,
   uncertain,
+];
+
+/** Fresh detections are solid; they fade as they age. */
+const detectionOpacity: ExpressionSpecification = [
+  "interpolate",
+  ["linear"],
+  ["get", "ageHours"],
+  0,
+  1,
+  DETECTION_FADE_HOURS,
+  0.3,
 ];
 
 const hovered: ExpressionSpecification = ["boolean", ["feature-state", "hover"], false];
@@ -93,27 +110,11 @@ export const LAYERS: LayerSpecification[] = [
     },
   },
   {
-    id: PREVIEW_FILL_LAYER,
-    type: "fill",
-    source: PREVIEW_SOURCE,
-    paint: {
-      "fill-color": probabilityColour("peakProbability"),
-      "fill-opacity": uncertaintyOpacity("meanUncertainty", PREVIEW_OPACITY.plain),
-    },
-  },
-  {
-    // Dims everything outside the open state and trims preview squares that
-    // stick out past its border.
-    id: "pyro-mask",
+    // Dims everything outside the open state.
+    id: MASK_LAYER,
     type: "fill",
     source: MASK_SOURCE,
     paint: { "fill-color": "#0b0b10", "fill-opacity": 0.72 },
-  },
-  {
-    id: "pyro-preview-hover",
-    type: "line",
-    source: PREVIEW_SOURCE,
-    paint: { "line-color": "#ffffff", "line-width": 2, "line-opacity": ["case", hovered, 1, 0] },
   },
   {
     id: "pyro-selected-state-line",
@@ -176,6 +177,20 @@ export const LAYERS: LayerSpecification[] = [
     paint: { "line-color": "#ffffff", "line-width": 1.5, "line-dasharray": [3, 2] },
   },
   {
+    // Every detection in the open state: smaller than a loaded region's, which draw on top.
+    id: "pyro-state-detections",
+    type: "circle",
+    source: STATE_DETECTIONS_SOURCE,
+    paint: {
+      "circle-radius": ["interpolate", ["linear"], ["zoom"], 4, 2, 8, 4],
+      "circle-color": "#ffffff",
+      "circle-stroke-color": "#111111",
+      "circle-stroke-width": 1,
+      "circle-opacity": detectionOpacity,
+      "circle-stroke-opacity": detectionOpacity,
+    },
+  },
+  {
     id: "pyro-detections",
     type: "circle",
     source: DETECTIONS_SOURCE,
@@ -184,16 +199,7 @@ export const LAYERS: LayerSpecification[] = [
       "circle-color": "#ffffff",
       "circle-stroke-color": "#111111",
       "circle-stroke-width": 1.5,
-      // Fresh detections are solid; they fade as they age.
-      "circle-opacity": [
-        "interpolate",
-        ["linear"],
-        ["get", "ageHours"],
-        0,
-        1,
-        DETECTION_FADE_HOURS,
-        0.3,
-      ],
+      "circle-opacity": detectionOpacity,
     },
   },
   // Hovered state, drawn enlarged and raised above the map (national view only).

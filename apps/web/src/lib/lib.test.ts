@@ -45,6 +45,7 @@ describe("loadConfig", () => {
       mapStyleUrl: style,
       useMock: false,
       terrain: null,
+      satellite: null,
     });
   });
 
@@ -90,6 +91,31 @@ describe("loadConfig", () => {
       ["VITE_TERRAIN_ATTRIBUTION", "", /VITE_TERRAIN_ATTRIBUTION/],
     ])("rejects %s=%s", (name, value, message) => {
       expect(() => loadConfig({ ...base, ...terrain, [name]: value })).toThrow(message);
+    });
+  });
+
+  describe("satellite", () => {
+    const base = { VITE_MAP_STYLE_URL: style, VITE_USE_MOCK: "true" };
+    const satellite = {
+      VITE_SATELLITE_TILES_URL: "https://imagery.test/{z}/{y}/{x}",
+      VITE_SATELLITE_MAXZOOM: "16",
+      VITE_SATELLITE_ATTRIBUTION: "Imagery: test",
+    };
+
+    it("is off when no tile URL is set", () => {
+      expect(loadConfig(base).satellite).toBeNull();
+    });
+
+    it("reads the imagery settings and requires a zoom limit and a credit", () => {
+      expect(loadConfig({ ...base, ...satellite }).satellite).toEqual({
+        tilesUrl: satellite.VITE_SATELLITE_TILES_URL,
+        maxZoom: 16,
+        attribution: "Imagery: test",
+      });
+      expect(() => loadConfig({ ...base, ...satellite, VITE_SATELLITE_MAXZOOM: "x" })).toThrow(/integer/);
+      expect(() => loadConfig({ ...base, ...satellite, VITE_SATELLITE_ATTRIBUTION: "" })).toThrow(
+        /VITE_SATELLITE_ATTRIBUTION/,
+      );
     });
   });
 });

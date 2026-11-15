@@ -122,30 +122,39 @@ export type TileFetcher = (
   signal?: AbortSignal,
 ) => Promise<TileResponse>;
 
-// --- State preview: Express currently returns an empty collection. -------
+// --- Statewide heat map: GET /states/{fips}/heatmap ----------------------
 
-export interface PreviewTileProperties {
-  /** Same ID that GET /tiles returns for a point in this tile. */
-  tileId: string;
-  /** Highest cell probability in the tile, 0 to 1; null if the tile has no model output yet. */
-  peakProbability: number | null;
-  /** Mean cell uncertainty, 0 to 1; null with peakProbability. */
-  meanUncertainty: number | null;
+export interface StateHeatmapGrid {
+  rows: number;
+  columns: number;
+  /** Distance between scored points, km; the map interpolates between them. */
+  spacingKm: number;
+  /** Row-major, north to south, west to east; null where nothing was scored. */
+  probability: Array<number | null>;
+  /** Same layout; 0 (certain) to 1. */
+  uncertainty: Array<number | null>;
 }
 
-export type PreviewTileCollection = FeatureCollection<Polygon, PreviewTileProperties>;
-
-export interface StatePreview {
+export interface StateHeatmap {
   /** Two-digit state FIPS code. */
   stateId: string;
-  /** Newest model output among the tiles; null if none have any. */
+  /** "ready": model scores are present. "observed": detections only. */
+  status: "ready" | "observed";
+  /** The grid's extent, [west, south, east, north] in degrees: the state's bounding box. */
+  bounds: [number, number, number, number];
+  /** When the scores were produced; null without model output. */
   updatedAt: string | null;
-  /** One coarse cell per 50 km tile that overlaps the state. */
-  tiles: PreviewTileCollection;
+  grid: StateHeatmapGrid | null;
+  /** FIRMS detections inside the state. */
+  detections: DetectionCollection;
+  prediction?: PredictionMetadata;
+  inference?: { status: "ready" | "not_configured" | "unavailable"; message?: string };
+  sourceFailures?: Array<{ source: string; message: string }>;
 }
 
-export type StatePreviewFetcher = (
+/** Resolves to null when the mode has no statewide data (the real archive is sparse samples). */
+export type StateHeatmapFetcher = (
   stateId: string,
   mode: MapMode,
   signal?: AbortSignal,
-) => Promise<StatePreview>;
+) => Promise<StateHeatmap | null>;

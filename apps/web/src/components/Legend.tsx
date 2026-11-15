@@ -42,7 +42,7 @@ function OverlayLegend({ overlay }: { overlay: Exclude<LegendOverlay, null> }) {
 }
 
 /**
- * `terrain`: the tile view is drawing elevation under the heat map.
+ * `terrain`: the map is drawing elevation (terrain view, or under a loaded region).
  * `overlay`: spread outlines (live) or perimeters (historical) on the map.
  * `historical`: cell colours are a hindcast, not a forecast.
  */
@@ -78,7 +78,7 @@ export function Legend({
         output yet
       </div>
       <p className="hint">
-        {relativeScore ? "Fainter cells indicate greater model disagreement." : "Fainter cells are less certain."} Dots are satellite detections; they fade with age.
+        {relativeScore ? "Fainter areas indicate greater model disagreement." : "Fainter areas are less certain."} Dots are satellite detections; they fade with age.
       </p>
       {overlay && <OverlayLegend overlay={overlay} />}
       {terrain && <ElevationLegend />}

@@ -1,7 +1,7 @@
 import type {
   LatLong,
-  StatePreview,
-  StatePreviewFetcher,
+  StateHeatmap,
+  StateHeatmapFetcher,
   TileFetcher,
   TileResponse,
 } from "./types";
@@ -112,7 +112,7 @@ function isFeatureCollection(value: unknown): boolean {
   return v.type === "FeatureCollection" && Array.isArray(v.features);
 }
 
-/** Historical routes live under /history and are read-only on the orchestrator. */
+/** Historical tiles live under /history and are read-only on the orchestrator. */
 const routePrefix = (mode: MapMode) => (mode.kind === "historical" ? "/history" : "");
 const dateQuery = (mode: MapMode): Record<string, string> =>
   mode.kind === "historical" ? { date: mode.date } : {};
@@ -140,37 +140,47 @@ export function createTileFetcher(
   };
 }
 
-function isStatePreview(value: unknown, stateId: string): value is StatePreview {
-  if (typeof value !== "object" || value === null) return false;
-  const v = value as Record<string, unknown>;
-  return (
-    v.stateId === stateId &&
-    (v.updatedAt === null || typeof v.updatedAt === "string") &&
-    isFeatureCollection(v.tiles)
-  );
+const scores = (value: unknown, length: number) =>
+  Array.isArray(value) && value.length === length &&
+  value.every((v) => v === null || (typeof v === "number" && v >= 0 && v <= 1));
+
+function isStateHeatmap(value: unknown, stateId: string): value is StateHeatmap {
+  const v = record(value);
+  if (!v || v.stateId !== stateId || (v.status !== "ready" && v.status !== "observed")) return false;
+  const bounds = v.bounds;
+  if (!Array.isArray(bounds) || bounds.length !== 4 ||
+      !bounds.every((n) => typeof n === "number" && Number.isFinite(n)) ||
+      bounds[0] >= bounds[2] || bounds[1] >= bounds[3]) return false;
+  if ((v.updatedAt !== null && typeof v.updatedAt !== "string") || !isFeatureCollection(v.detections)) return false;
+  if (v.grid === null) return v.status === "observed";
+  const grid = record(v.grid);
+  return !!grid && Number.isInteger(grid.rows) && Number.isInteger(grid.columns) &&
+    Number(grid.rows) > 0 && Number(grid.columns) > 0 && typeof grid.spacingKm === "number" &&
+    scores(grid.probability, Number(grid.rows) * Number(grid.columns)) &&
+    scores(grid.uncertainty, Number(grid.rows) * Number(grid.columns));
 }
 
 /**
- * State overview against apps/orchestrator.
- * Live: GET {baseUrl}/states/{fips}/preview
- * Historical: GET {baseUrl}/history/states/{fips}/preview?date=YYYY-MM-DD
+ * Statewide heat map against apps/orchestrator: GET {baseUrl}/states/{fips}/heatmap.
+ * The server caches it per state and lets the browser reuse it for a few minutes.
+ * Historical mode has no statewide archive, so it resolves to null without a request.
  */
-export function createStatePreviewFetcher(
+export function createStateHeatmapFetcher(
   baseUrl: string,
   fetchImpl: typeof fetch = fetch,
-): StatePreviewFetcher {
+): StateHeatmapFetcher {
   return async (stateId: string, mode: MapMode, signal?: AbortSignal) => {
-    const query = new URLSearchParams(dateQuery(mode)).toString();
+    if (mode.kind === "historical") return null;
     const response = await fetchImpl(
-      `${baseUrl}${routePrefix(mode)}/states/${encodeURIComponent(stateId)}/preview${query ? `?${query}` : ""}`,
+      `${baseUrl}/states/${encodeURIComponent(stateId)}/heatmap`,
       { signal },
     );
     if (!response.ok) {
       throw await responseError(response);
     }
     const body: unknown = await response.json();
-    if (!isStatePreview(body, stateId)) {
-      throw new ApiError("Orchestrator response does not match the state preview schema");
+    if (!isStateHeatmap(body, stateId)) {
+      throw new ApiError("Orchestrator response does not match the state heat map schema");
     }
     return body;
   };

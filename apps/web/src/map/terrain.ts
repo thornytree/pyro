@@ -91,8 +91,8 @@ const elevationTint: ExpressionSpecification = [
 const isMajor: ExpressionSpecification = ["==", ["get", "level"], 1];
 
 /**
- * Terrain layers, bottom to top. They start hidden; the map shows them only in
- * the tile view. `font` is a text-font the basemap's glyph server can serve;
+ * Terrain layers, bottom to top. They start hidden; the map shows them in the
+ * terrain view and under a loaded region's cells. `font` is a text-font the basemap's glyph server can serve;
  * without one the contour labels are left out.
  */
 export function terrainLayers(font: string[] | null): LayerSpecification[] {

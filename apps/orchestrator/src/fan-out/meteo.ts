@@ -37,28 +37,38 @@ export async function retryWeatherRequest<T>(request: () => Promise<T>): Promise
   }
 }
 
-/** Fetch regional NOAA forecasts, sampled at ~3 km and mapped to a ~1 km grid. */
-export async function getWeatherAttributes(
-  lat: number,
-  long: number,
-  options: { forecastHours?: number } = {},
-): Promise<WeatherAttributes> {
-  const forecastHours = options.forecastHours ?? 24;
+type Point = dataBundle["location"];
+export type ForecastSample = {
+  requested_location: Point;
+  source_location: Point;
+  elevation_m: number;
+  hourly: Array<WeatherValues & { time: string }>;
+};
+type CurrentSample = ForecastSample & Pick<WeatherGrid["samples"][number], "observation_time" | "current">;
+
+const BATCH_SIZE = 50; // Locations per request; keeps the query string within URL limits.
+const MAX_CONCURRENT_BATCHES = 4;
+
+/**
+ * Hourly NOAA RRFS forecasts for arbitrary points, in request order. Current
+ * conditions double the variables Open-Meteo bills for, so they are opt-in.
+ */
+export async function fetchForecast(points: Point[], forecastHours: number, withCurrent: true): Promise<CurrentSample[]>;
+export async function fetchForecast(points: Point[], forecastHours: number, withCurrent?: false): Promise<ForecastSample[]>;
+export async function fetchForecast(
+  points: Point[], forecastHours: number, withCurrent = false,
+): Promise<Array<ForecastSample | CurrentSample>> {
   if (!Number.isInteger(forecastHours) || forecastHours < 1 || forecastHours > 72) {
     throw new Error("Forecast hours must be an integer between 1 and 72.");
   }
-  const target = createRegionGrid(lat, long, 1);
-  const coarse = createRegionGrid(lat, long, 3);
-  // Include the selected point first to preserve the existing point-weather fields.
-  const points = [{ latitude: lat, longitude: long }, ...coarse.cells];
-  const batches = Array.from({ length: Math.ceil(points.length / 50) }, (_, index) =>
-    points.slice(index * 50, (index + 1) * 50));
-  const results = await Promise.all(batches.map(async points => {
+  const batches = Array.from({ length: Math.ceil(points.length / BATCH_SIZE) }, (_, index) =>
+    points.slice(index * BATCH_SIZE, (index + 1) * BATCH_SIZE));
+  const fetchBatch = async (points: Point[]) => {
     const responses = await retryWeatherRequest(() => fetchWeatherApi("https://api.open-meteo.com/v1/forecast", {
       latitude: points.map(point => point.latitude),
       longitude: points.map(point => point.longitude),
       models: model,
-      current: variables,
+      ...(withCurrent ? { current: variables } : {}),
       hourly: variables,
       forecast_hours: forecastHours,
       temperature_unit: "celsius",
@@ -68,10 +78,10 @@ export async function getWeatherAttributes(
       cell_selection: "nearest",
     }, 3, 0.2, 2, { signal: AbortSignal.timeout(60_000) }));
     if (responses.length !== points.length) throw new Error("Open-Meteo returned incomplete grid coverage.");
-    return responses.map((response, index): WeatherGrid["samples"][number] => {
+    return responses.map((response, index): ForecastSample | CurrentSample => {
       const current = response.current();
       const hourly = response.hourly();
-      if (!current || !hourly) throw new Error("Open-Meteo returned no current or hourly weather data.");
+      if ((withCurrent && !current) || !hourly) throw new Error("Open-Meteo returned no current or hourly weather data.");
       // Open-Meteo SDK model ID 156 identifies ncep_rrfs_conus.
       if (response.model() !== 156) throw new Error("Open-Meteo returned an unexpected weather model.");
       const elevation = response.elevation();
@@ -93,16 +103,43 @@ export async function getWeatherAttributes(
         requested_location: points[index]!,
         source_location: { latitude, longitude },
         elevation_m: elevation,
-        observation_time: new Date(Number(current.time()) * 1000).toISOString(),
-        current: weatherValues(i => current.variables(i)?.value()),
+        ...(withCurrent && current ? {
+          observation_time: new Date(Number(current.time()) * 1000).toISOString(),
+          current: weatherValues(i => current.variables(i)?.value()),
+        } : {}),
         hourly: Array.from({ length }, (_, hour) => ({
           time: new Date((Number(hourly.time()) + hour * step) * 1000).toISOString(),
           ...weatherValues(i => arrays[i]?.[hour]),
         })),
       };
     });
+  };
+  // A few workers drain the batches, so a large grid does not open every request at once.
+  const results = new Array<Array<ForecastSample | CurrentSample>>(batches.length);
+  let next = 0;
+  await Promise.all(Array.from({ length: Math.min(MAX_CONCURRENT_BATCHES, batches.length) }, async () => {
+    while (next < batches.length) {
+      const index = next++;
+      results[index] = await fetchBatch(batches[index]!);
+    }
   }));
-  const samples = results.flat();
+  return results.flat();
+}
+
+/** Fetch regional NOAA forecasts, sampled at ~3 km and mapped to a ~1 km grid. */
+export async function getWeatherAttributes(
+  lat: number,
+  long: number,
+  options: { forecastHours?: number } = {},
+): Promise<WeatherAttributes> {
+  const forecastHours = options.forecastHours ?? 24;
+  if (!Number.isInteger(forecastHours) || forecastHours < 1 || forecastHours > 72) {
+    throw new Error("Forecast hours must be an integer between 1 and 72.");
+  }
+  const target = createRegionGrid(lat, long, 1);
+  const coarse = createRegionGrid(lat, long, 3);
+  // Include the selected point first to preserve the existing point-weather fields.
+  const samples = await fetchForecast([{ latitude: lat, longitude: long }, ...coarse.cells], forecastHours, true);
   const center = samples[0]!;
   // Map each target cell to the nearest point on our regular coarse sampling grid.
   const cells = target.cells.map(point => {

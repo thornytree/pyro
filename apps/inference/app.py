@@ -13,7 +13,7 @@ from threadpoolctl import threadpool_limits
 
 from model.inference.predict import Predictor
 from model.training.train import train
-from model.schema import PredictionBundle
+from model.schema import PointsRequest, PredictionBundle
 
 ROOT = Path(__file__).resolve().parent
 TRAINING_FILES = ("train.csv.gz", "validation.csv.gz", "test.csv.gz", "columns.json")
@@ -72,6 +72,13 @@ def create_app(model_path: Path | None = None, data_dir: Path | None = None):
     def predict(bundle: PredictionBundle):
         try:
             return service.state.predictor.predict(bundle)
+        except ValueError as error:
+            raise HTTPException(status_code=422, detail=str(error)) from error
+
+    @service.post("/predict/points")
+    def predict_points(request: PointsRequest):
+        try:
+            return service.state.predictor.predict_points(request)
         except ValueError as error:
             raise HTTPException(status_code=422, detail=str(error)) from error
 

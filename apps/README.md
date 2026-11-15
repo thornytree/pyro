@@ -11,6 +11,8 @@
 **Today (2026-11-15):**
 
 ```
+web --GET /states/{fips}/heatmap--> orchestrator --> FIRMS + NOAA (Open-Meteo) on a coarse state grid
+                                    orchestrator --POST /predict/points--> inference; cached per state
 web --GET /tiles?lat&long--> orchestrator --fanOutEntry--> FIRMS, NOAA (Open-Meteo), Daymet, 3DEP, LANDFIRE
                              orchestrator --POST /predict (dataBundle)--> inference (baseline model)
 web <--status "ready": cells + detections + bundle-- orchestrator
@@ -33,14 +35,14 @@ Training should use the same features the orchestrator builds at serve time. How
 | Folder | Work item | Status |
 |---|---|---|
 | `orchestrator/src/fan-out/` | 1. Point input, region, source retrieval and normalization | Done for live requests (all five sources). Optional scheduled 50 km grid path exists but is not started. |
-| `orchestrator/src/app.ts` | 1. HTTP API | `GET /health`, `GET /tiles` (with inference call) and `/history` proxy done. Preview returns empty. |
+| `orchestrator/src/app.ts` | 1. HTTP API | `GET /health`, `GET /tiles` (with inference call), `GET /states/{fips}/heatmap` and `/history` proxy done. |
 | `inference/sources/firms/` | 2. FIRMS archive | Done: 21 M detections harmonized. Live FIRMS is in the orchestrator. |
 | `inference/sources/weather/` | 2. Weather | Live: orchestrator (NOAA RRFS via Open-Meteo). Historical weather for training: not started. |
 | `inference/sources/topography/` | 2. Terrain and fuels | Live: orchestrator (3DEP, LANDFIRE). Historical fuel vintages for training: not started. |
 | `inference/sources/daymet/` | 2. Daymet | Retrieval in the orchestrator. Use in training: not started. |
 | `inference/harmonization/` | 2. Training bundles and features | First compiled table done (10 km cell-days); live-bundle features in `model/features.py`. |
 | `inference/model/training/` | 3. Training | Baseline trained (`train.py`). Latent-sensor model not started. Needs labels (NIFC / WFIGS, unverified). |
-| `inference/model/inference/` | 3. Inference service | Done for the baseline: `POST /predict`, `/history`. |
+| `inference/model/inference/` | 3. Inference service | Done for the baseline: `POST /predict`, `POST /predict/points`, `/history`. |
 | `inference/shared/` | Schemas and grid | FIRMS schema and 50 km grid done. `dataBundle` schema not mirrored in Python yet. |
 | `web/` | Map site | Built; mock and observed-data modes work. Waits on model output. |
 
@@ -57,12 +59,12 @@ In dependency order. Details are in each folder's README.
 5. **Train** the latent-fire-state model (`docs/handover/model-outline.md`) and version the artifact outside git.
 6. **Inference service.** FastAPI `POST` route taking a `dataBundle`, returning per-cell `probability` and `uncertainty` (and later `spread`). Base URL from an environment variable.
 7. **Orchestrator integration.** After fan-out, call inference; merge cells into the tile response, set `status: "ready"` and `updatedAt`. If inference fails, still return `observed` data. Report it in `/health`.
-8. **Web.** Turn the real output on (it already renders `cells`), decide what the state preview shows, and build `/history` routes and spread on the backend or keep them mock-only.
+8. **Web.** Turn the real output on (it already renders `cells`), extend the statewide heat map to past days, and build `/history` routes and spread on the backend or keep them mock-only.
 
 ## Contracts
 
-`web` -> `orchestrator`: `GET /tiles?lat=&long=` is implemented (see `orchestrator/README.md`); `GET /states/{fips}/preview` exists but returns no tiles. `GET /history/...` and the `spread` / `drivers` / `perimeters` fields are web-side proposals in `web/README.md`.
+`web` -> `orchestrator`: `GET /tiles?lat=&long=` is implemented (see `orchestrator/README.md`); `GET /states/{fips}/heatmap` returns a statewide score grid and detections (see `web/README.md`). `GET /history/...` and the `spread` / `drivers` / `perimeters` fields are web-side proposals in `web/README.md`.
 
-`orchestrator` -> `inference`: `POST /predict` with the `dataBundle`; response validated in `orchestrator/src/inference/client.ts`. Check both sides with `npm run test:integration --workspace @pyro/orchestrator`.
+`orchestrator` -> `inference`: `POST /predict` with the model's part of the `dataBundle` (location, time, weather grid), and `POST /predict/points` for the statewide grid; responses validated in `orchestrator/src/inference/client.ts`. Check both sides with `npm run test:integration --workspace @pyro/orchestrator`.
 
 See `docs/handover/` for source decisions and risks.

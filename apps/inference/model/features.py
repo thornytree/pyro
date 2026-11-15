@@ -8,7 +8,7 @@ from datetime import timedelta
 import numpy as np
 import pandas as pd
 
-from model.schema import PredictionBundle
+from model.schema import PointsRequest, PredictionBundle
 from shared import grid
 
 FEATURES = [
@@ -40,6 +40,33 @@ def weather_features(hours, elevation):
     }
 
 
+def place_features(lat, lon, start):
+    """Native-cell centre and season, as compiled for training."""
+    # The compiled target uses local-solar dates. A rolling 24h forecast is
+    # approximated by its midpoint's local-solar date; report the true window.
+    local_day = (start + timedelta(hours=12 + float(lon) / 15)).date()
+    season = 2 * np.pi * (local_day.timetuple().tm_yday - 1) / 365.25
+    return {
+        "latitude": float(lat), "longitude": float(lon),
+        "doy_sin": np.sin(season), "doy_cos": np.cos(season),
+    }
+
+
+def point_features(request: PointsRequest):
+    """One feature row per point: its native 10 km cell's place and its own 24h weather."""
+    points = request.points
+    x, y = grid.to_albers([p.latitude for p in points], [p.longitude for p in points])
+    rows, cols = grid.cell_index(x, y)
+    if np.any(rows < 0) or np.any(cols < 0):
+        raise ValueError("A point is outside the model's CONUS frame")
+    lats, lons = grid.from_albers(*grid.cell_centre(rows, cols))
+    start = points[0].hourly[0].time
+    records = [{**place_features(lat, lon, start), **weather_features(point.hourly[:24], point.elevation_m)}
+               for point, lat, lon in zip(points, lats, lons)]
+    ids = [grid.cell_id(int(row), int(col)) for row, col in zip(rows, cols)]
+    return pd.DataFrame(records, columns=FEATURES), ids, start
+
+
 def bundle_features(bundle: PredictionBundle):
     """Aggregate display samples by native 10 km training cell; return display mapping."""
     cells = bundle.weather_grid.cells
@@ -57,14 +84,7 @@ def bundle_features(bundle: PredictionBundle):
     for native_index, ((row, col), indices) in enumerate(groups.items()):
         cx, cy = grid.cell_centre(row, col)
         lat, lon = grid.from_albers(cx, cy)
-        # The compiled target uses local-solar dates. A rolling 24h forecast is
-        # approximated by its midpoint's local-solar date; report the true window.
-        local_day = (start + timedelta(hours=12 + float(lon) / 15)).date()
-        season = 2 * np.pi * (local_day.timetuple().tm_yday - 1) / 365.25
-        record = {
-            "latitude": float(lat), "longitude": float(lon),
-            "doy_sin": np.sin(season), "doy_cos": np.cos(season),
-        }
+        record = place_features(lat, lon, start)
         for key in FEATURES[4:]:
             record[key] = float(np.mean([sample_features[cells[i].sample_index][key] for i in indices]))
         east = np.mean([sample_features[cells[i].sample_index]["_wind_east"] for i in indices])

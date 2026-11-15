@@ -9,7 +9,19 @@ export type ServerConfig = {
   webOrigin: string;
   defaults: FanOutOptions;
   inference?: { url: string; timeoutMs: number };
+  /** Statewide heat map: weather-point budget per state and how long a result is reused. */
+  stateHeatmap: { maxPoints: number; ttlMs: number };
+  /** How long a region's fetched source bundle is reused; 0 turns the cache off. */
+  tileCacheTtlMs: number;
 };
+
+function integer(env: NodeJS.ProcessEnv, name: string, fallback: number, min: number, max: number): number {
+  const value = Number(env[name]?.trim() || fallback);
+  if (!Number.isInteger(value) || value < min || value > max) {
+    throw new Error(`${name} must be an integer between ${min} and ${max}.`);
+  }
+  return value;
+}
 
 export function loadEnvironment(): void {
   // Resolves apps/orchestrator/.env from both src/ and compiled dist/.
@@ -70,6 +82,12 @@ export function readConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
   if (!host) throw new Error("HOST cannot be empty.");
   return {
     host, port, webOrigin, inference,
+    stateHeatmap: {
+      // The Python points route accepts at most 3000.
+      maxPoints: integer(env, "STATE_GRID_MAX_POINTS", 300, 16, 3000),
+      ttlMs: integer(env, "STATE_CACHE_TTL_MINUTES", 180, 1, 1440) * 60_000,
+    },
+    tileCacheTtlMs: integer(env, "TILE_CACHE_TTL_SECONDS", 300, 0, 3600) * 1000,
     defaults: { forecastHours, landfireVersion: version as LandfireVersion, daymet: { startDate, endDate } },
   };
 }
