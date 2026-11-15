@@ -1,6 +1,6 @@
 import { createRegionGrid } from "./region.ts";
 import { fetchRaster } from "./raster.ts";
-import type { dataBundle, LandfireVersion, VegetationValues } from "./types.ts";
+import type { dataBundle, LandfireVersion, VegetationAttributes, VegetationValues } from "./types.ts";
 
 const products = ["FBFM40", "EVT", "CC", "CH", "CBH", "CBD"] as const;
 type Product = typeof products[number];
@@ -29,7 +29,7 @@ export function normalizeLandfireValues(values: Record<Product, number | null>):
 /** Raw category-preserving samples of six versioned LANDFIRE CONUS products. */
 export async function getVegetationAttributes(
   lat: number, long: number, options: { version?: LandfireVersion } = {},
-): Promise<Pick<dataBundle, "vegetation">> {
+): Promise<{ vegetation: VegetationAttributes }> {
   const version = options.version ?? "LF2025";
   if (!versions.includes(version)) throw new Error("Unsupported LANDFIRE version.");
   const grid = createRegionGrid(lat, long, 1);

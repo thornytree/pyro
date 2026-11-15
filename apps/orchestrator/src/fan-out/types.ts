@@ -1,18 +1,31 @@
+import type { FailureReason, SourceName } from "./source-error.ts";
+
 export type dataBundle = {
   location: {
     latitude: number
     longitude: number
   }
   observation_time: string
+  // Open-Meteo weather is required. The other four sources are null when their
+  // provider failed; each such failure is listed in source_failures.
   fire: {
     detections: FireDetection[]
-  }
+  } | null
   weather: WeatherValues
   weather_grid: WeatherGrid
-  historical_weather: HistoricalWeather
-  terrain: TerrainAttributes
-  vegetation: VegetationAttributes
+  historical_weather: HistoricalWeather | null
+  terrain: TerrainAttributes | null
+  vegetation: VegetationAttributes | null
+  source_failures: SourceFailure[]
 }
+
+/** A context source that could not be fetched. Its bundle field is null. */
+export type SourceFailure = {
+  source: Exclude<SourceName, "Open-Meteo">;
+  reason: FailureReason;
+  upstreamStatus?: number;
+  message: string; // Fixed, credential-free diagnostic.
+};
 
 export type FirmsSource =
   | "MODIS_NRT"

@@ -40,8 +40,10 @@ its category in `confidenceCategory` and has null numeric confidence.
 
 Errors use `{ "error": { "code": "...", "message": "..." } }`: malformed input
 is 400, outside the coarse supported bounds is 422, unknown routes/states are 404,
-and required-source failures are 502. Source failures include a provider `source`,
-safe `reason`, and `upstreamStatus` when available. Raw provider exceptions and
+and a failure of the required weather source (Open-Meteo) is 502. That error includes the provider `source`,
+safe `reason`, and `upstreamStatus` when available. A failure of FIRMS, Daymet, USGS 3DEP or LANDFIRE
+does not fail the request: that field of `bundle` is null and the failure is listed in
+`bundle.source_failures` with the same `source`, `reason`, `upstreamStatus` and message. Raw provider exceptions and
 credentials are not returned. CORS permits the configured `WEB_ORIGIN`; non-browser tools work normally.
 
 Local `apps/web/.env` is configured with `VITE_USE_MOCK=false` and the API URL.
@@ -93,7 +95,7 @@ score kind, target, native resolution and uncertainty definition. A model timeou
 HTTP error or malformed output produces an observation response with
 `inference: {status: "unavailable", message: "..."}` rather than losing detections.
 Successful results use `inference.status: "ready"`; no configured URL uses
-`not_configured`. This differs from required-provider failure, which remains 502.
+`not_configured`. This differs from a weather-provider failure, which remains 502.
 
 The baseline requires at least 24 hourly forecasts, so with inference configured
 the orchestrator fetches at least 24 hours even when `forecastHours` is lower.

@@ -58,29 +58,33 @@ function validObservedBundle(value: unknown, point: LatLong, bounds: number[]): 
   const location = record(bundle.location);
   const weather = record(bundle.weather);
   const weatherGrid = record(bundle.weather_grid);
-  const terrain = record(bundle.terrain);
-  const vegetation = record(bundle.vegetation);
-  const history = record(bundle.historical_weather);
-  const fire = record(bundle.fire);
-  if (!location || !weather || !weatherGrid || !terrain || !vegetation || !history || !fire) return false;
+  // Weather is required. The other sources are null when their provider failed.
+  const optional = (value: unknown) => value === null ? null : record(value) ?? undefined;
+  const terrain = optional(bundle.terrain);
+  const vegetation = optional(bundle.vegetation);
+  const history = optional(bundle.historical_weather);
+  const fire = optional(bundle.fire);
+  if (!location || !weather || !weatherGrid || terrain === undefined || vegetation === undefined ||
+      history === undefined || fire === undefined || !Array.isArray(bundle.source_failures)) return false;
   if (typeof location.latitude !== "number" || typeof location.longitude !== "number" ||
       Math.abs(location.latitude - point.lat) > 1e-8 || Math.abs(location.longitude - point.long) > 1e-8) return false;
   if (!["temperature", "humidity", "wind_speed_kph", "wind_direction"].every(key =>
     typeof weather[key] === "number" && Number.isFinite(weather[key]))) return false;
-  if (!["elevation_m", "slope_degrees", "aspect_degrees"].every(key =>
+  if (terrain && !["elevation_m", "slope_degrees", "aspect_degrees"].every(key =>
     terrain[key] === null || (typeof terrain[key] === "number" && Number.isFinite(terrain[key])))) return false;
   if (typeof bundle.observation_time !== "string" || !Number.isFinite(Date.parse(bundle.observation_time)) ||
-      typeof history.start_date !== "string" || !isIsoDate(history.start_date) ||
-      typeof history.end_date !== "string" || !isIsoDate(history.end_date) ||
-      typeof vegetation.version !== "string" || !Array.isArray(fire.detections)) return false;
+      (history && (typeof history.start_date !== "string" || !isIsoDate(history.start_date) ||
+        typeof history.end_date !== "string" || !isIsoDate(history.end_date))) ||
+      (vegetation && typeof vegetation.version !== "string") || (fire && !Array.isArray(fire.detections))) return false;
   const matchesBounds = (value: unknown) => {
     const object = record(value);
     return !!object && ["west", "south", "east", "north"].every((key, i) =>
       typeof object[key] === "number" && Math.abs(object[key] - bounds[i]!) < 1e-8);
   };
-  const grids = [weatherGrid, record(terrain.grid), record(vegetation.grid), record(history.grid)];
-  if (!matchesBounds(weatherGrid.bounds) || !matchesBounds(history.bounds) ||
-      !matchesBounds(record(terrain.grid)?.bounds) || !matchesBounds(record(vegetation.grid)?.bounds)) return false;
+  const grids = [weatherGrid, ...[terrain, vegetation, history].filter(source => source !== null).map(source => record(source.grid))];
+  if (!matchesBounds(weatherGrid.bounds) || (history && !matchesBounds(history.bounds)) ||
+      (terrain && !matchesBounds(record(terrain.grid)?.bounds)) ||
+      (vegetation && !matchesBounds(record(vegetation.grid)?.bounds))) return false;
   return grids.every(grid => grid !== null &&
     Number.isInteger(grid.rows) && Number(grid.rows) > 0 &&
     Number.isInteger(grid.columns) && Number(grid.columns) > 0 &&

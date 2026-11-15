@@ -63,6 +63,8 @@ test("fans out all providers and assembles a complete JSON-safe bundle only afte
   const bundle = await fanOutEntry(34.05, -118.25, options);
   assert.deepEqual(bundle.location, { latitude: 34.05, longitude: -118.25 });
   assert.equal(bundle.observation_time, "2023-11-14T22:13:20.000Z");
+  assert.deepEqual(bundle.source_failures, []);
+  assert.ok(bundle.fire && bundle.historical_weather && bundle.terrain && bundle.vegetation);
   assert.deepEqual(bundle.fire.detections, []);
   assert.equal(bundle.historical_weather.grids.length, 7);
   assert.equal(bundle.historical_weather.start_date, options.daymet.startDate);
@@ -81,5 +83,14 @@ test("fans out all providers and assembles a complete JSON-safe bundle only afte
   requests.length = 0;
   expectedRequests = 14; // Static raster downloads are now cached.
   failFire = true;
-  await assert.rejects(fanOutEntry(34.05, -118.25, options), /FIRMS.*503/);
+  // A failed context source no longer fails the region; it is reported instead.
+  t.mock.method(console, "error", () => {});
+  const degraded = await fanOutEntry(34.05, -118.25, options);
+  assert.equal(degraded.fire, null);
+  assert.ok(degraded.terrain && degraded.vegetation && degraded.historical_weather);
+  assert.equal(degraded.source_failures.length, 1);
+  assert.equal(degraded.source_failures[0]?.source, "FIRMS");
+  assert.equal(degraded.source_failures[0]?.upstreamStatus, 503);
+  assert.match(degraded.source_failures[0]!.message, /FIRMS.*503/);
+  assert.deepEqual(JSON.parse(JSON.stringify(degraded)), degraded);
 });

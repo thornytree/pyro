@@ -2,10 +2,10 @@ import { tileSamplePoints } from "./grid.ts";
 import type { TileWeather, WeatherPoint } from "./types.ts";
 import { fetchWeatherApi } from "openmeteo";
 import { createRegionGrid } from "./region.ts";
-import type { dataBundle, WeatherGrid, WeatherValues } from "./types.ts";
+import type { dataBundle, TerrainAttributes, WeatherGrid, WeatherValues } from "./types.ts";
 
 type WeatherAttributes = Pick<dataBundle, "location" | "observation_time" | "weather" | "weather_grid"> & {
-  terrain: Pick<dataBundle["terrain"], "elevation_m">;
+  terrain: Pick<TerrainAttributes, "elevation_m">;
 };
 const variables = [
   "temperature_2m", "relative_humidity_2m", "wind_speed_10m", "wind_direction_10m",

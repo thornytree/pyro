@@ -13,7 +13,7 @@ export function toTileResponse(bundle: dataBundle) {
     cells: { type: "FeatureCollection" as const, features: [] },
     detections: {
       type: "FeatureCollection" as const,
-      features: bundle.fire.detections.map(detection => ({
+      features: (bundle.fire?.detections ?? []).map(detection => ({
         type: "Feature" as const,
         geometry: {
           type: "Point" as const,

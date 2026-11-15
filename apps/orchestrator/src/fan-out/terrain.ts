@@ -1,7 +1,7 @@
 import { createRegionGrid } from "./region.ts";
 import { fetchRaster, rasterCell } from "./raster.ts";
 import type { RasterGrid } from "./raster.ts";
-import type { dataBundle, TerrainValues } from "./types.ts";
+import type { dataBundle, TerrainAttributes, TerrainValues } from "./types.ts";
 
 const service = "https://elevation.nationalmap.gov/arcgis/rest/services/3DEPElevation/ImageServer";
 
@@ -31,7 +31,7 @@ export function terrainAt(raster: RasterGrid, point: dataBundle["location"]): Te
 }
 
 /** Fetch a ~30 m DEM, then sample terrain on the common ~1 km output grid. */
-export async function getTerrainAttributes(lat: number, long: number): Promise<Pick<dataBundle, "terrain">> {
+export async function getTerrainAttributes(lat: number, long: number): Promise<{ terrain: TerrainAttributes }> {
   const target = createRegionGrid(lat, long, 1);
   const count = Math.ceil(Math.sqrt(300) * 1609.344 / 30);
   const latStep = (target.bounds.north - target.bounds.south) / count;

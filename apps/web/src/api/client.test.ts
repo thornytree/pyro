@@ -48,12 +48,25 @@ describe("createTileFetcher", () => {
     await expect(createTileFetcher("http://api.test", fetchReturning(observed))(point, LIVE)).resolves.toEqual(observed);
   });
 
+  it("accepts observations with a failed context source, but not without weather", async () => {
+    const observed = toTileResponse({
+      ...makeBundle({ latitude: point.lat, longitude: point.long }), fire: null, terrain: null,
+      source_failures: [
+        { source: "FIRMS", reason: "REQUEST_FAILED", message: "FIRMS failed." },
+        { source: "USGS 3DEP", reason: "TIMEOUT", message: "USGS 3DEP failed." },
+      ],
+    });
+    await expect(createTileFetcher("http://api.test", fetchReturning(observed))(point, LIVE)).resolves.toEqual(observed);
+    const noWeather = { ...observed, bundle: { ...observed.bundle, weather: null } };
+    await expect(createTileFetcher("http://api.test", fetchReturning(noWeather))(point, LIVE)).rejects.toThrow(/selected region/);
+  });
+
   it("rejects observations for a different selected point or mismatched provider extent", async () => {
     const observed = toTileResponse(makeBundle({ latitude: point.lat, longitude: point.long }));
     const wrongPoint = structuredClone(observed);
     wrongPoint.bundle.location.longitude += 0.01;
     const wrongBounds = structuredClone(observed);
-    wrongBounds.bundle.terrain.grid.bounds.east += 0.1;
+    wrongBounds.bundle.terrain!.grid.bounds.east += 0.1;
     for (const response of [wrongPoint, wrongBounds, { ...observed, bundle: undefined }]) {
       await expect(createTileFetcher("http://api.test", fetchReturning(response))(point, LIVE)).rejects.toThrow(/selected region/);
     }

@@ -41,5 +41,6 @@ export function makeBundle(location = { latitude: 34.05, longitude: -118.25 }): 
       fuel_model_system: "Scott and Burgan 40", source_urls: [], fetched_at: observation_time,
       grid: { bounds, rows, columns, cells: cells.map(cell => ({ ...cell, ...vegetation })) },
     },
+    source_failures: [],
   };
 }

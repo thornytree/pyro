@@ -74,6 +74,7 @@ function TileSummary({
         <p>Source data loaded for the selected 300-square-mile region. Spread predictions are not available yet.</p>
         <p>Satellite detections: {tile.detections.features.length}</p>
         {tile.inference?.status === "unavailable" && <p className="hint">{tile.inference.message}</p>}
+        <SourceFailures tile={tile} />
         {tile.bundle && (
           <>
             <dl className="tile-summary">
@@ -84,13 +85,13 @@ function TileSummary({
               <dt>Wind</dt>
               <dd>{tile.bundle.weather.wind_speed_kph.toFixed(1)} km/h from {compassPoint(tile.bundle.weather.wind_direction)}</dd>
               <dt>Elevation</dt>
-              <dd>{tile.bundle.terrain.elevation_m === null ? "no data" : `${Math.round(tile.bundle.terrain.elevation_m)} m`}</dd>
+              <dd>{tile.bundle.terrain?.elevation_m == null ? "no data" : `${Math.round(tile.bundle.terrain.elevation_m)} m`}</dd>
               <dt>Regional grid</dt>
               <dd>{tile.bundle.weather_grid.rows} × {tile.bundle.weather_grid.columns} cells</dd>
               <dt>Historical weather context</dt>
-              <dd>{tile.bundle.historical_weather.start_date} to {tile.bundle.historical_weather.end_date}</dd>
+              <dd>{tile.bundle.historical_weather ? `${tile.bundle.historical_weather.start_date} to ${tile.bundle.historical_weather.end_date}` : "no data"}</dd>
               <dt>Fuel map</dt>
-              <dd>{tile.bundle.vegetation.version}</dd>
+              <dd>{tile.bundle.vegetation?.version ?? "no data"}</dd>
             </dl>
             <DownloadSources tile={tile} />
           </>
@@ -119,6 +120,7 @@ function TileSummary({
           Scores are relative to the sampled training data, not calibrated burn probabilities.
         </p>
       )}
+      <SourceFailures tile={tile} />
       <dl className="tile-summary">
         <dt>Tile</dt>
         <dd>
@@ -132,7 +134,7 @@ function TileSummary({
         <dd>{extreme}</dd>
         <dt>{historical ? "Detections that day" : "Satellite detections"}</dt>
         <dd>
-          {tile.history ? tile.history.observedDetectionCount : ages.length}
+          {tile.history ? tile.history.observedDetectionCount : tile.bundle?.fire === null ? "unavailable" : ages.length}
           {newest !== null && !historical && ` (newest ${formatAge(newest)})`}
         </dd>
         {!historical && (
@@ -248,6 +250,18 @@ function FragmentRow({ term, value }: { term: string; value: string }) {
   );
 }
 
+
+/** Names the context sources whose provider failed, so missing data is not read as "none". */
+function SourceFailures({ tile }: { tile: TileResponse }) {
+  const failures = tile.bundle?.source_failures ?? [];
+  if (failures.length === 0) return null;
+  return (
+    <p className="hint">
+      Unavailable right now: {failures.map((failure) => failure.source).join(", ")}.
+      {tile.bundle?.fire === null && " Satellite detections are not shown."}
+    </p>
+  );
+}
 
 function DownloadSources({ tile }: { tile: TileResponse }) {
   if (!tile.bundle) return null;

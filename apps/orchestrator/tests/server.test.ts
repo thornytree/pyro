@@ -33,7 +33,7 @@ test("serves health, parses the web query, returns observations/bundle and sanit
   const config = readConfig(env);
   const app = createApp(config, async (lat, long, options) => {
     calls.push({ lat, long, options });
-    if (typedFailure) throw new SourceFetchError("Daymet", new Error("Daymet returned HTTP 404"));
+    if (typedFailure) throw new SourceFetchError("Open-Meteo", new Error("Open-Meteo returned HTTP 404"));
     if (fail) throw new Error("https://provider.test/private-firms?token=private-earthdata");
     return makeBundle();
   });
@@ -91,7 +91,7 @@ test("serves health, parses the web query, returns observations/bundle and sanit
   fail = false;
   typedFailure = true;
   const diagnosed = await (await fetch(`${base}/tiles?lat=34.05&long=-118.25`)).json();
-  assert.equal(diagnosed.error.source, "Daymet");
+  assert.equal(diagnosed.error.source, "Open-Meteo");
   assert.equal(diagnosed.error.upstreamStatus, 404);
   assert.ok(!JSON.stringify(diagnosed).includes("private-"));
 });

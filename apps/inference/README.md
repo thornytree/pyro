@@ -94,7 +94,7 @@ perimeter or sensor-confidence values are invented.
 The orchestrator checks output coverage, score ranges, geometry and forecast
 window before returning `status: "ready"`. Inference errors/timeouts preserve the
 successful source bundle as `observed` with an `inference.unavailable` notice.
-Required source failures still return 502; connecting a model does not relax that.
+A weather-source failure still returns 502; connecting a model does not relax that. The other four sources may be null in the bundle, which the model ignores.
 
 ## Verification
 

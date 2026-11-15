@@ -137,7 +137,10 @@ References: [USGS 3DEP ImageServer](https://elevation.nationalmap.gov/arcgis/res
 ## Failure diagnostics
 
 Fan-out wraps each provider failure with a source name and a fixed safe reason.
-Express 502 responses include `source`, `reason`, optional `upstreamStatus`, and a
+Only Open-Meteo is required, because it defines the grid and feeds the model. If FIRMS,
+Daymet, USGS 3DEP or LANDFIRE fails, its bundle field is null and the failure is added to
+`source_failures`; the other sources are still returned.
+Express 502 responses (Open-Meteo failures) include `source`, `reason`, optional `upstreamStatus`, and a
 credential-free message. Raw errors, URLs, headers and nested causes are never
 serialized to the client. The server logs only the same constructed message.
 Open-Meteo connection failures receive one bounded retry; invalid data is not retried.
