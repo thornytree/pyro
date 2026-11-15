@@ -1,4 +1,4 @@
-import { NO_DATA_COLOUR, PERIMETER_COLOUR, PROBABILITY_STOPS, SPREAD_COLOUR } from "../map/layers";
+import { DETECTION_FADE_HOURS, NO_DATA_COLOUR, PERIMETER_COLOUR, PROBABILITY_STOPS, SPREAD_COLOUR } from "../map/layers";
 import { SPREAD_HORIZONS } from "../lib/spread";
 import { ELEVATION_STOPS } from "../map/terrain";
 
@@ -17,6 +17,31 @@ function ElevationLegend() {
       </div>
       <p className="hint">
         Shaded relief and contour lines (metres); spacing tightens as you zoom in.
+      </p>
+    </>
+  );
+}
+
+/** Key for the white dots: what they are, and what their brightness and size mean. */
+function DetectionLegend({ generated }: { generated: boolean }) {
+  return (
+    <>
+      <div className="legend-subtitle">Satellite fire detections</div>
+      <div className="legend-nodata">
+        <span className="dot" /> Hotspot seen by a satellite{" "}
+        {generated ? "(generated sample data)" : "(NASA FIRMS: MODIS and VIIRS)"}
+      </div>
+      <div className="legend-nodata">
+        <span className="dot" />
+        <span className="dot faded" /> Newest are solid; they fade over{" "}
+        {DETECTION_FADE_HOURS} hours
+      </div>
+      <div className="legend-nodata">
+        <span className="dot small" />
+        <span className="dot" /> Small: whole state. Large: the region you clicked
+      </div>
+      <p className="hint">
+        These are observations, not model output, so they stay on in every view.
       </p>
     </>
   );
@@ -45,17 +70,20 @@ function OverlayLegend({ overlay }: { overlay: Exclude<LegendOverlay, null> }) {
  * `terrain`: the map is drawing elevation (terrain view, or under a loaded region).
  * `overlay`: spread outlines (live) or perimeters (historical) on the map.
  * `historical`: cell colours are a hindcast, not a forecast.
+ * `generated`: mock mode, where the detections are not real.
  */
 export function Legend({
   terrain,
   overlay,
   historical,
   relativeScore = false,
+  generated = false,
 }: {
   terrain: boolean;
   overlay: LegendOverlay;
   historical: boolean;
   relativeScore?: boolean;
+  generated?: boolean;
 }) {
   const gradient = PROBABILITY_STOPS.map(
     ([stop, colour]) => `${colour} ${stop * 100}%`,
@@ -78,8 +106,9 @@ export function Legend({
         output yet
       </div>
       <p className="hint">
-        {relativeScore ? "Fainter areas indicate greater model disagreement." : "Fainter areas are less certain."} Dots are satellite detections; they fade with age.
+        {relativeScore ? "Fainter areas indicate greater model disagreement." : "Fainter areas are less certain."}
       </p>
+      <DetectionLegend generated={generated} />
       {overlay && <OverlayLegend overlay={overlay} />}
       {terrain && <ElevationLegend />}
     </div>

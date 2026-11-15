@@ -296,6 +296,7 @@ export function App({ config }: { config: AppConfig }) {
           terrain={terrainShown}
           overlay={overlay}
           historical={historical}
+          generated={config.useMock}
           relativeScore={(tile ?? stateHeatmap)?.prediction?.scoreKind === "sample_relative"}
         />
         <footer>

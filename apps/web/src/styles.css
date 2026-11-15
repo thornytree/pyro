@@ -440,3 +440,23 @@ button:disabled {
   opacity: 0.6;
   font-size: 14px;
 }
+
+/* Legend key for satellite detections; matches the map's white dots. */
+.dot {
+  flex: none;
+  width: 10px;
+  height: 10px;
+  background: #ffffff;
+  border: 1.5px solid #111111;
+  border-radius: 50%;
+}
+
+.dot.small {
+  width: 6px;
+  height: 6px;
+  border-width: 1px;
+}
+
+.dot.faded {
+  opacity: 0.3;
+}
