@@ -1,13 +1,14 @@
 # sources/weather
 
-Work item 2: meteorological data for the target area.
+Work item 2: meteorological data.
 
-- **Provider:** Open-Meteo (decided, see `docs/handover/data-sources.md`).
-- **Input:** coordinates or grid cells, time range.
-- **Output:** wind speed and direction, gusts, relative humidity, vapour pressure deficit, soil moisture, precipitation, temperature.
+## Live: implemented in the orchestrator
 
-## Notes
+[`apps/orchestrator/src/fan-out/meteo.ts`](../../../orchestrator/src/fan-out/meteo.ts) requests NOAA RRFS CONUS through Open-Meteo for 100 points across the region plus the selected point: current and hourly temperature, humidity, wind speed, direction and gusts, precipitation, vapour pressure deficit and solar radiation. See the fan-out README for details.
 
-- Use the forecast API for live data and the Historical Weather API for training dates.
-- Request RRFS or best match. HRRR is discontinued on 2026-11-30.
-- Free-tier call cap is unverified. Check before polling many points.
+## Training: not started
+
+- RRFS through Open-Meteo has little history, so training needs another product (Open-Meteo Historical Weather API, or Daymet, which the fan-out already fetches for an explicit date range).
+- Whatever is used must produce the same variables as the live feed. Compare the two on an overlapping period before training.
+- HRRR is discontinued on 2026-11-30; do not build on it.
+- Open-Meteo free-tier limits and non-commercial terms still need checking.

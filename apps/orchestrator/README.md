@@ -50,3 +50,11 @@ Checks: `npm test --workspace @pyro/orchestrator`,
 `npm run build --workspace @pyro/orchestrator`.
 
 See [source adapters](src/fan-out/README.md) for units, versions and grid semantics.
+
+## Not built yet
+
+- **Inference call.** `/tiles` stops at observations: `cells` is empty, `updatedAt` is null and `/health` reports `inference: "not_connected"`. To add: an inference base URL in config, a call after fan-out with the `dataBundle`, merging the returned cells into the response with `status: "ready"`, and falling back to `observed` if inference fails or times out. The inference service and its route do not exist yet (`apps/inference/model/inference/README.md`).
+- **State preview.** `GET /states/{fips}/preview` returns no tiles. It needs model output for many regions at once, which the request-driven design does not produce; see the statewide-preview caveat in `apps/web/README.md`.
+- **Historical routes.** The web app's historical mode calls `GET /history/tiles` and `GET /history/states/{fips}/preview`, which return 404 here. Proposed in `apps/web/README.md`.
+- **Spread.** The web app accepts optional `spread` and `drivers` fields; nothing produces them.
+- **Scheduled ingestion.** The 50 km grid and scheduler in `src/fan-out/` are not started. Whether to keep request-driven fetching (every click fetches five providers) or move to the scheduled design of decisions 2 and 11 needs a team decision; see `docs/handover/decisions.md`.

@@ -1,8 +1,8 @@
 # Front end: work so far
 
-Last updated: 2026-11-14. Branch: `front-end-mockup` (merged to `main` in `802f6d9`).
+Last updated: 2026-11-15. Branch: `front-end-mockup`.
 
-The map site lives in `apps/web` (React, Vite, MapLibre GL JS). It runs on generated mock data. No real model output is wired in yet. Setup, the API contract and a full list of caveats are in [`apps/web/README.md`](../../apps/web/README.md).
+The map site lives in `apps/web` (React, Vite, MapLibre GL JS). It calls the orchestrator's `GET /tiles`, which returns real detections but no model output yet (`status: "observed"`), or runs on generated mock data with `VITE_USE_MOCK=true`. Most features (probability cells, spread, historical mode, state preview) can only be seen on mock data until the model is integrated. Setup, the API contract and a full list of caveats are in [`apps/web/README.md`](../../apps/web/README.md).
 
 ## What was built, in order
 
@@ -12,7 +12,8 @@ The map site lives in `apps/web` (React, Vite, MapLibre GL JS). It runs on gener
 | `3bdb9c5` | State hover, statewide preview and tile drill-down. |
 | `19bcc10` | Terrain under the tile view, fixed compass and scale bar. |
 | `b9a5456` | Browser location opens the user's state, zoom-driven focus and unfocus, "← US map" return button. |
-| (this branch) | Live / historical mode switch, about 1 km cells, experimental predicted spread, observed perimeters in historical mode. |
+| `595d14b` | Live / historical mode switch, about 1 km cells, experimental predicted spread, observed perimeters in historical mode. |
+| `9707bdc` | Merged main: shows the orchestrator's `observed` tiles (detections, no cells). |
 
 ## Features
 
@@ -70,13 +71,13 @@ The map site lives in `apps/web` (React, Vite, MapLibre GL JS). It runs on gener
 
 ## Tests
 
-`npm test --workspace @pyro/web`: 103 unit tests covering the client, mock, config (including terrain settings), geometry, state outlines, click handling, geolocation, scale-bar maths, terrain layer building, map modes (URL, date range, routes) and spread geometry. There are no component or end-to-end tests. Each feature was checked by hand in a headless browser.
+`npm test --workspace @pyro/web`: 104 unit tests covering the client, mock, config (including terrain settings), geometry, state outlines, click handling, geolocation, scale-bar maths, terrain layer building, map modes (URL, date range, routes) and spread geometry. There are no component or end-to-end tests. Each feature was checked by hand in a headless browser.
 
 ## Known gaps
 
 - **Spread is mock and ahead of the model.** Nothing predicts spread on the backend. The weather is sampled every 10 km, coarser than the 1 km cells, so detail below that has to come from terrain and fuels.
 - **`/history` routes and the `spread` field are web-side proposals.** The orchestrator has neither; the archive would need to be readable per tile and day.
-- **Mock data only.** The orchestrator does not implement the endpoints yet, and every number on screen is generated.
+- **No model output.** The orchestrator's `GET /tiles` returns detections only; cells, spread and the state preview need the inference service. On mock data every number is generated.
 - **Statewide preview vs decision 2.** On a real backend most preview squares would be grey, because the model only runs for active tiles. This needs a team decision.
 - **Basemap and contour labels not seen end to end.** Testing used a blank style because OpenFreeMap was unreachable from the build sandbox.
 - **Terrain adds network load** (about 20 to 40 DEM images per tile view).
@@ -84,7 +85,7 @@ The map site lives in `apps/web` (React, Vite, MapLibre GL JS). It runs on gener
 
 ## Next steps
 
-1. Agree the tile and preview contract with the orchestrator and inference owners.
+1. Show real model cells once the orchestrator returns them (`status: "ready"`); the map already draws `cells`. Agree what the state preview shows on a request-driven backend.
 2. Agree the `/history` routes and the `spread` / `drivers` / `perimeters` fields; decide whether hindcasts and a spread model are in scope.
 3. Verify the real basemap, including contour labels, in a normal browser.
 4. Add a national FIRMS detection layer (needs its own endpoint).

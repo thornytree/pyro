@@ -1,18 +1,19 @@
 # harmonization
 
-Work item 2: builds the harmonized data bundle.
+Work item 2: turns source data into model features.
 
-- **Input:** region of interest and timestamp from `apps/orchestrator/trigger` (live) or a historical date (training).
-- **Output:** one bundle with coordinates, FIRMS detections, weather, topography and Daymet features on a common grid and time base.
+## Status (2026-11-15)
 
-## Responsibilities
+Not started. Part of the original scope moved: the orchestrator's fan-out (`apps/orchestrator/src/fan-out/`) now fetches all sources for a request and aligns them to one common grid (28 x 28 cells, about 1 km, over a 300-square-mile region centred on the point). That normalized `dataBundle` is the live input.
 
-- Call each `sources/*` module and align results to the project grid.
-- Record per-source fetch status and data age so the model and UI can tell missing data from "no fire".
-- Run identically for live and historical dates. Training and inference must use this same code path.
+## What is left here
+
+- **Features from a bundle.** Map `dataBundle` fields (detections, current and hourly weather, Daymet history, terrain, fuels) to model inputs per cell and time step. Live and training must use this same code.
+- **Historical bundles for training.** Build bundles for past dates and tiles: FIRMS from the harmonized archive (`sources/firms/archive.py`), historical weather, and LANDFIRE fuels from the matching vintage. Either call the orchestrator's fan-out with past dates or port the needed parts to Python.
+- **Missing data.** Every source can return nulls per cell. Record which sources were present so the model can tell "missing" from "no fire".
 
 ## Open questions
 
-- Model cell size inside the 50 km tile, projection, time step.
-- Bundle format (schema lives in `shared/`).
-- Behaviour when one source fails or times out.
+- Model cell size and time step. The fan-out grid (about 1 km) is the obvious candidate.
+- Live weather is NOAA RRFS through Open-Meteo, which has little history. Which historical weather product trains the model, and how far does it differ from RRFS on an overlapping period?
+- Behaviour when a source fails: the orchestrator currently fails the whole request (502) if any of the five sources fails.

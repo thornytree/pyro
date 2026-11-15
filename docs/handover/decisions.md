@@ -23,6 +23,20 @@
 | 11 | Live fetchers follow decision 2 | The orchestrator polls FIRMS nationwide on a schedule and fetches weather only for active tiles; a user request only activates a tile and reads the cache. Replaces the per-click fetch on a 300 square mile box. See `apps/orchestrator/src/fan-out/README.md`. |
 | 12 | Landsat is included in the live FIRMS poll | It adds detections the other sensors miss (see "Landsat assessment" below) for one extra request per poll. Its weight is left to the model's per-sensor likelihood. |
 
+## Code that differs from these decisions (2026-11-15, needs team confirmation)
+
+The orchestrator merged on 2026-11-15 does not follow some decisions above. Nothing here is decided; the team should confirm or reverse each one.
+
+| Decision | What the running code does |
+|---|---|
+| 1. Daymet is training only | Daymet is fetched on every `GET /tiles`, for a caller-chosen past date range, under `historical_weather`. It is labelled historical context, not current weather. |
+| 2 and 11. Scheduled ingestion; a click only activates a tile | Every click fetches all five sources for the clicked region. The scheduler and 50 km grid are kept but not started. |
+| 6. Fixed 50 km tiles; the tile ID is the shareable location | Requests use a 300-square-mile (about 28 km) square centred on the click, with IDs like `region-<lat>_<long>`. Not a fixed grid, so not a stable shareable ID. |
+| 12. Landsat in the live poll | Only in the unused nationwide poll; the per-click FIRMS request uses the four MODIS/VIIRS feeds. |
+| Data sources: USGS 3DEP dropped in favour of LANDFIRE topography | Terrain comes from 3DEP (elevation, slope, aspect); LANDFIRE supplies fuels and canopy. |
+
+Consequences either way: request-driven fetching costs five provider calls per click (latency, quotas) and gives no national or statewide model output for the preview; the scheduled design gives fixed IDs and a preview but is not wired to any route.
+
 ## Proposed, not agreed (2026-11-14)
 
 - **Web / orchestrator contract.** `GET /tiles?lat=&long=` returning tile ID, status (`ready` or `queued`), bounds, and GeoJSON cells and detections in EPSG:4326. Written from the web side only; see `apps/web/README.md`.

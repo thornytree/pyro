@@ -2,8 +2,10 @@
 
 The website: interactive US heat map of current and predicted wildfires.
 
-- Sends `lat`, `long` to `apps/orchestrator` (`src/fan-out/`). Base URL comes from `VITE_ORCHESTRATOR_URL`.
-- Renders model output from `apps/inference/model/inference`, relayed by the orchestrator.
+- Sends `lat`, `long` to `apps/orchestrator` (`GET /tiles`). Base URL comes from `VITE_ORCHESTRATOR_URL`.
+- Will render model output from `apps/inference`, relayed by the orchestrator. Until that exists:
+  - **Against the orchestrator** (`VITE_USE_MOCK=false`): a tile shows real FIRMS detections and the panel says source data loaded, with no probability cells. The state preview is empty, and historical mode fails (no `/history` routes).
+  - **Mock** (`VITE_USE_MOCK=true`): every feature works on generated data, including cells, spread and historical mode.
 
 ## Run
 

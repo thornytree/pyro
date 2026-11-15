@@ -20,11 +20,12 @@ Treat "is there a wildfire in this grid cell at this time" as a hidden variable.
   - both can depend on the detection's reported confidence and FRP
 - **No overpass is not a negative.** Polar orbiters see a cell only a few times a day. A cell with no detection because no satellite passed must be treated as unobserved, not as "no fire". This needs overpass times or a per-source observation mask.
 - **Output:** posterior `P(fire[cell, t])` for the heat map, plus its uncertainty.
+- **Serving (2026-11-15):** the orchestrator builds a normalized `dataBundle` for a 300-square-mile region on a 28 x 28 (about 1 km) grid and will POST it to the inference service. Neither the service nor the call exists yet; see `apps/inference/model/inference/README.md`.
 
 ## Training
 
 - Detections: FIRMS archive, harmonized into `data/firms_harmonized` (21.0 M detections, five sensors). Load with `read_harmonized` in `apps/inference/sources/firms/archive.py`. Every sensor has a 0/1/2 confidence class; Landsat has no FRP or brightness, so FRP-dependent likelihood terms need a fallback for it. About 12% of rows are flagged non-fire (volcano, static source, offshore) and should be filtered or modelled separately. Landsat has no such flag; see the Landsat assessment in `decisions.md` before setting its false-alarm prior.
-- Weather: Open-Meteo Historical Weather API for the same dates and cells
+- Weather: Open-Meteo Historical Weather API for the same dates and cells. Note (2026-11-15): live weather is now NOAA RRFS via Open-Meteo, which has little history; check that the training product matches it on an overlapping period, or pick another.
 - Labels: NIFC / WFIGS incident locations and perimeters (decided 2026-11-14, feed details unverified). They anchor the per-sensor detection and false-alarm rates. A cell with no WFIGS incident is not proof of no fire, because small fires can go unreported.
 - Inference: stochastic variational inference in Pyro is the default choice; revisit if the grid makes it too slow.
 
