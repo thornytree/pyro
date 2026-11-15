@@ -9,7 +9,7 @@ Python: model training and inference, exposed over HTTP with FastAPI. Only `apps
 | `sources/firms/` | Done: FIRMS archive normalizer and loader (`archive.py`, `normalize.py`). |
 | `shared/` | Done: unified FIRMS schema, 50 km EPSG:5070 tile grid. |
 | `sources/{weather,topography,daymet}/` | No Python code. Live retrieval lives in `apps/orchestrator/src/fan-out/`; these READMEs point there. |
-| `harmonization/` | Not started. |
+| `harmonization/` | Training side done: FIRMS per cell-day, sample, and the compiled train / validation / test table (`compile_dataset.py`; see `docs/handover/compiled-dataset.md`). Features from a live bundle: not started. |
 | `model/training/`, `model/inference/` | Not started. |
 | FastAPI app | Not started. `fastapi` and `uvicorn` are dependencies, but there is no app module or route. |
 

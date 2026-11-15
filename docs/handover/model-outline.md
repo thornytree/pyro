@@ -28,10 +28,11 @@ Treat "is there a wildfire in this grid cell at this time" as a hidden variable.
 - Weather: Open-Meteo Historical Weather API for the same dates and cells. Note (2026-11-15): live weather is now NOAA RRFS via Open-Meteo, which has little history; check that the training product matches it on an overlapping period, or pick another.
 - Labels: NIFC / WFIGS incident locations and perimeters (decided 2026-11-14, feed details unverified). They anchor the per-sensor detection and false-alarm rates. A cell with no WFIGS incident is not proof of no fire, because small fires can go unreported.
 - Inference: stochastic variational inference in Pyro is the default choice; revisit if the grid makes it too slow.
+- First training table (2026-11-15): 8,071 cell-days on a 10 km daily grid with FIRMS history, Open-Meteo, Daymet and LANDFIRE topography, split 60/20/20 by date; see `compiled-dataset.md`. It fits a plain classifier of "any FIRMS detection that day" from weather, terrain and fire history. It does not yet fit the structure above: there is one target instead of per-sensor observations, no WFIGS labels, no overpass mask and no fuels.
 
 ## Decisions needed
 
-1. Model cell size inside a tile, and time step (drives data volume and API call counts)
+1. Model cell size inside a tile, and time step (drives data volume and API call counts). Training data is on 10 km daily cells; the live bundle is about 1 km.
 2. Train on NRT or science-quality detections (see risks doc)
 3. How to get overpass coverage per source (required by the agreed structure)
 4. How WFIGS incidents and perimeters are rasterized into per-cell labels

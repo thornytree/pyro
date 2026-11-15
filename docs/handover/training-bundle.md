@@ -1,6 +1,6 @@
 # Training bundle
 
-2026-11-14
+2026-11-14, updated 2026-11-15
 
 Combines the harmonized FIRMS archive with weather, topography and Daymet into one table for training and testing. Built in steps so each can be rerun alone.
 
@@ -11,10 +11,10 @@ Combines the harmonized FIRMS archive with weather, topography and Daymet into o
 | 1 | 10 km daily grid (`shared/grid.py`) | Done |
 | 2 | FIRMS per cell, day and sensor (`harmonization/firms_cells.py`) | Done: `data/training/firms_cell_day` |
 | 3 | Training sample and cell list (`harmonization/training_sample.py`) | Done: `data/training/sample`, `cells.csv.gz` |
-| 4 | Topography (LANDFIRE) for the cells in `cells.csv.gz` | Downloaded (LF 2020 elevation, slope, aspect in `data/landfire_us`); not yet resampled to cells |
-| 5 | Daymet, first 25,000 cells in fetch order (`sources/daymet/fetch.py` -> `data/daymet_us`) | Running against the live API from `apps/inference/fetch_weather.cmd` on the Windows computer (about 2 cells/s with 4 requests at a time). The cell cap, 8 requests at a time and the water-cell skip are tested against a mock server only |
-| 6 | Open-Meteo history for a random subsample (`harmonization/weather_queue.py`, `sources/weather/fetch_history.py` -> `data/open-meteo_us`) | Queue of 200,000 cell-days written; fetcher tested against a mock server only; one live request made by hand in a browser returned all 8 hourly variables. About 9,000 cell-days per daily run on the free tier |
-| 7 | Join into one table, coverage report | Waits on 4 to 6 |
+| 4 | Topography (LANDFIRE) for the cells in `cells.csv.gz` | Done for the compiled cells: LF 2020 elevation, slope and aspect summarised per cell from the 240 m pyramid level (`sources/topography/landfire.py`) |
+| 5 | Daymet, first 25,000 cells in fetch order (`sources/daymet/fetch.py` -> `data/daymet_us`) | Done: 24,857 cell files (2000 to 2025) and 143 water cells in `no_data.csv` |
+| 6 | Open-Meteo history for a random subsample (`harmonization/weather_queue.py`, `sources/weather/fetch_history.py` -> `data/open-meteo_us`) | First daily run done: 9,000 of the 200,000 queued cell-days, all 8 hourly variables complete. About 9,000 more per daily run on the free tier |
+| 7 | Join into one table, split into train / validation / test (`harmonization/compile_dataset.py`) | Done for the 9,000 cell-days with Open-Meteo weather: 8,071 complete rows in `data/training/compiled`. See [compiled-dataset.md](compiled-dataset.md). Rerun with `--force` after each Open-Meteo run |
 
 ## Choices made
 
@@ -24,11 +24,13 @@ Combines the harmonized FIRMS archive with weather, topography and Daymet into o
 - **Sample:** all 3,650,576 cell-days with a vegetation-fire detection, plus as many with no detection of any kind, drawn at random from the same 70,665 cells and the same year (7.3 M rows). Background rows mean "no sensor reported anything", not confirmed absence of fire.
 - **Sensor columns are empty outside that sensor's archive dates**, so a missing sensor is not read as "saw nothing". Overpass gaps inside the archive period are still not modelled.
 - **Split is by time:** train to 2024, validation 2025, test 2026. A working default (`--validation-year`, `--test-year`); earlier cut-offs would leave no NOAA-21 or Landsat data in training.
+- **Superseded for the compiled table (2026-11-15):** step 7 splits 60/20/20 by date instead (train to 2022-03-06, validation to 2024-03-30, test to 2025-12-31) and drops the 2026 rows, which have no Daymet. The `split` column in `sample/` is not used.
 
 ## Not yet in the table
 
 - Labels. FIRMS columns are observations; NIFC / WFIGS (decision 8) is still unverified and not downloaded.
-- Any weather, terrain or fuel feature (step 7 joins them).
+- Fuels and canopy (LANDFIRE FBFM40, CC, CH, CBH, CBD). Only elevation, slope and aspect were downloaded.
+- Weather for the other 191,000 queued cell-days, and any 2026 row (no Daymet yet).
 
 ## Weather choices
 

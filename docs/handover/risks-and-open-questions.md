@@ -1,6 +1,6 @@
 # Risks and open questions
 
-Last updated: 2026-11-14 (evening, after the FIRMS harmonization and orchestrator fan-out)
+Last updated: 2026-11-15 (after the first compiled training table)
 
 ## Risks
 
@@ -27,6 +27,10 @@ Last updated: 2026-11-14 (evening, after the FIRMS harmonization and orchestrato
 | Bundle schema in two languages | `dataBundle` is defined in TypeScript; the Python service will need its own copy. | One schema, changed on both sides together, with a test against a real `/tiles` response. |
 | Per-click fan-out cost | Each click fetches five providers (several HTTP requests each); one failure fails the whole tile (502). Latency and provider quotas are untested under load. | Decide request-driven vs scheduled (decisions.md, 2026-11-15 table); consider returning partial data when a non-essential source fails. |
 | Spread shown before a spread model exists | The live map draws predicted spread outlines from a mock formula (wind, humidity). It could be read as a real forecast, which matters if it reaches public safety users. | Keep the "experimental" and "mock data" labels; replace it with model output checked against the historical perimeters before any outside demo. |
+| Training table is small | 8,071 complete cell-days; Open-Meteo's free tier adds about 9,000 a day against 200,000 queued. | Keep running `fetch_weather.cmd` daily and recompile with `--force`; or train a first model without Open-Meteo columns on the 3.3 M sample rows that have Daymet. |
+| Training target is a FIRMS detection | `fire` in the compiled table means "a sensor reported a vegetation fire", which is what the model is meant to arbitrate, not ground truth. | Add WFIGS labels before trusting any accuracy figure. |
+| Training grid and features differ from live | Compiled table: 10 km daily cells, Open-Meteo archive weather, LANDFIRE 2020 terrain at 240 m, no fuels. Live bundle: about 1 km cells, NOAA RRFS, 3DEP terrain, LANDFIRE fuels. A model trained on one cannot be served the other as is. | Decide the model grid (open question 1), then build live features to match the training columns or the reverse. |
+| Leaky or shifting columns in the compiled table | `label_*` columns describe the target day; `year` and `firms_sensors_active` take values in validation and test that training never saw. | Use only columns marked `feature` in `columns.json`; consider dropping `year` and `firms_sensors_active`. |
 | Basemap provider terms | The example basemap (OpenFreeMap) was not reachable from the build sandbox and its terms were not read. | Verify it loads and check terms, or pick another MapLibre style. |
 
 ## Unverified facts
@@ -35,10 +39,9 @@ These came from memory or were not on the pages read. Confirm before building on
 
 - FIRMS Area API column names per sensor. The archive CSVs are now verified (see `apps/inference/sources/firms/README.md`); the API has not been called. The orchestrator parser assumes `latitude, longitude, acq_date, acq_time, satellite, confidence, frp, scan, track`.
 - VIIRS NOAA-21 start date: `data-sources.md` gives 2024-01-17, but the harmonized archive has NOAA-21 rows from March 2023.
-- Python FIRMS tests pass in Claude's cloud workspace but have not been run on the Windows computer; orchestrator tests have not been run anywhere.
+- Python FIRMS tests pass in Claude's cloud workspace but have not been run on the Windows computer; orchestrator tests have not been run anywhere. The 9 tests in `tests/test_compile.py` passed when called directly; `pytest` has not run them.
 - Open-Meteo free-tier daily call cap and licence wording
-- LANDFIRE pixel size (expected 30 m)
-- Daymet release cadence (expected annual)
+- Daymet release cadence (expected annual; the downloaded series end 2025-12-31, consistent with that)
 - Open-Meteo endpoint hostnames for forecast and archive
 - NIFC / WFIGS endpoints, field names, history depth, update cadence and licence
 - OpenFreeMap style URL availability and usage terms (example basemap for `apps/web`)
@@ -46,7 +49,7 @@ These came from memory or were not on the pages read. Confirm before building on
 ## Open questions for the team
 
 0. Request-driven fetching (running code) or scheduled ingestion per 50 km tile (decisions 2 and 11)? See the 2026-11-15 table in `decisions.md`. Several questions below depend on it.
-1. Model cell size and time step? The fan-out's 28 x 28 grid (about 1 km over a 300-square-mile region) is the candidate. Is the working 50 km projection (EPSG:5070, IDs like `r40c80`) still needed?
+1. Model cell size and time step? The fan-out's 28 x 28 grid (about 1 km over a 300-square-mile region) is the candidate; the training table is on 10 km daily cells. Is the working 50 km projection (EPSG:5070, IDs like `r40c80`) still needed?
 2. Where does per-sensor overpass coverage come from?
 3. Hosting: where does ingestion run, and how often?
 4. Map stack for the frontend: MapLibre GL JS in the first cut (decision 10, pending team review). Basemap provider and DEM source for terrain still open.
