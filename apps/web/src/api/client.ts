@@ -36,13 +36,27 @@ function isTileResponse(value: unknown, point: LatLong): value is TileResponse {
     isFeatureCollection(v.detections) &&
     (v.spread === undefined || isFeatureCollection(v.spread)) &&
     (v.perimeters === undefined || isFeatureCollection(v.perimeters)) &&
-    (v.drivers === undefined || v.drivers === null || typeof v.drivers === "object")
+    (v.drivers === undefined || v.drivers === null || typeof v.drivers === "object") &&
+    (v.model === undefined || v.model === null || validModel(v.model)) &&
+    (v.inference === undefined || typeof record(v.inference)?.status === "string")
   );
 }
 
 function record(value: unknown): Record<string, unknown> | null {
   return typeof value === "object" && value !== null && !Array.isArray(value)
     ? value as Record<string, unknown> : null;
+}
+
+/** The panel reads these directly, so a malformed summary must not reach it. */
+function validModel(value: unknown): boolean {
+  const model = record(value);
+  const spread = record(model?.spread);
+  return !!model && !!spread && typeof model.version === "string" &&
+    typeof model.predictionDate === "string" && isIsoDate(model.predictionDate) &&
+    typeof model.baseRate === "number" && Number.isFinite(model.baseRate) &&
+    (spread.status === "no_confirmed_fire" || spread.status === "unavailable" ||
+      (spread.status === "ok" && typeof spread.meanSpreadKmPerDay === "number" &&
+        typeof record(spread.fire)?.detections === "number"));
 }
 
 function validBounds(bounds: number[], point: LatLong): boolean {

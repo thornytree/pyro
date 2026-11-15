@@ -184,6 +184,7 @@ export function App({ config }: { config: AppConfig }) {
 
   const tile = selection.kind === "loaded" ? selection.tile : null;
   const historical = mode.kind === "historical";
+  const modelled = tile?.model != null;
   const overlay: LegendOverlay =
     tile === null
       ? null
@@ -217,7 +218,7 @@ export function App({ config }: { config: AppConfig }) {
         </button>
       )}
       <div className={`mode-banner ${mode.kind}`} role="status">
-        {config.useMock ? modeLabel(mode) : "Live observations"}
+        {config.useMock || modelled ? modeLabel(mode) : "Live observations"}
       </div>
       <aside className="panel">
         <h1>
@@ -254,6 +255,7 @@ export function App({ config }: { config: AppConfig }) {
           terrain={tile !== null && config.terrain !== null}
           overlay={overlay}
           historical={historical}
+          relative={modelled}
         />
         <footer>
           Data: NASA FIRMS (fire detections), Open-Meteo (weather), LANDFIRE

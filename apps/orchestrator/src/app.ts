@@ -4,6 +4,8 @@ import { fanOutEntry } from "./fan-out/fan-out-entry.ts";
 import { validHistoricalRange } from "./config.ts";
 import type { ServerConfig } from "./config.ts";
 import { SourceFetchError } from "./fan-out/source-error.ts";
+import { createInference, inferenceHealth } from "./inference.ts";
+import type { RunInference } from "./inference.ts";
 import { toTileResponse } from "./tile-response.ts";
 
 class RequestError extends Error {
@@ -38,7 +40,12 @@ const conusFips = new Set([
   "01", "04", "05", "06", "08", "09", "10", "11", "12", "13", "16", "17", "18", "19", "20", "21", "22", "23", "24", "25", "26", "27", "28", "29", "30", "31", "32", "33", "34", "35", "36", "37", "38", "39", "40", "41", "42", "44", "45", "46", "47", "48", "49", "50", "51", "53", "54", "55", "56",
 ]);
 
-export function createApp(config: ServerConfig, runFanOut: typeof fanOutEntry = fanOutEntry) {
+export function createApp(
+  config: ServerConfig,
+  runFanOut: typeof fanOutEntry = fanOutEntry,
+  runInference: RunInference = createInference(config.inference),
+  checkInference: () => ReturnType<typeof inferenceHealth> = () => inferenceHealth(config.inference),
+) {
   const app = express();
   app.disable("x-powered-by");
   app.use((req, res, next) => {
@@ -55,9 +62,9 @@ export function createApp(config: ServerConfig, runFanOut: typeof fanOutEntry = 
     next();
   });
 
-  const health = (_req: Request, res: Response) => {
+  const health = async (_req: Request, res: Response) => {
     res.json({
-      status: "ok", service: "pyro-orchestrator", inference: "not_connected",
+      status: "ok", service: "pyro-orchestrator", inference: await checkInference(),
       regionAreaSqMiles: 300,
       sources: ["Open-Meteo", "FIRMS", "Daymet", "USGS 3DEP", "LANDFIRE"],
       defaults: config.defaults,
@@ -79,11 +86,11 @@ export function createApp(config: ServerConfig, runFanOut: typeof fanOutEntry = 
     if (!validHistoricalRange(startDate, endDate)) {
       throw new RequestError(400, "INVALID_REQUEST", "daymetStart and daymetEnd must form a historical date range of at most 366 days.");
     }
+    let bundle: Awaited<ReturnType<typeof runFanOut>>;
     try {
-      const bundle = await runFanOut(lat, long, {
+      bundle = await runFanOut(lat, long, {
         ...config.defaults, forecastHours, daymet: { startDate, endDate },
       });
-      res.set("Cache-Control", "no-store").json(toTileResponse(bundle));
     } catch (error) {
       if (error instanceof SourceFetchError) {
         console.error(error.message); // Constructed, credential-free diagnostic.
@@ -95,7 +102,13 @@ export function createApp(config: ServerConfig, runFanOut: typeof fanOutEntry = 
       }
       // Unknown provider exceptions may include credentials; never serialize them.
       res.status(502).json({ error: { code: "SOURCE_FETCH_FAILED", message: "A required data source failed. Check credentials, source availability and the requested dates." } });
+      return;
     }
+    // Models run on the fresh bundle. If they fail, the observations are still returned.
+    const inference = await runInference(bundle);
+    if (inference.status === "failed") console.warn(`Inference failed (${inference.reason}): ${inference.message}`);
+    else if (inference.status === "ok" && inference.spreadError) console.warn(`Spread model failed (${inference.spreadError.reason}): ${inference.spreadError.message}`);
+    res.set("Cache-Control", "no-store").json(toTileResponse(bundle, inference));
   });
 
   app.get("/states/:fips/preview", (req, res) => {

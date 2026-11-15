@@ -5,6 +5,9 @@ import { makeBundle } from "./fixtures/bundle.ts";
 import { createApp } from "../src/app.ts";
 import { readConfig } from "../src/config.ts";
 import type { FanOutOptions } from "../src/fan-out/fan-out-entry.ts";
+import { createInference } from "../src/inference.ts";
+import type { InferenceResult } from "../src/inference.ts";
+import { occurrenceBody, spreadBody } from "./fixtures/inference.ts";
 
 const env = {
   FIRMS_MAP_KEY: "private-firms", EARTHDATA_TOKEN: "private-earthdata",
@@ -18,10 +21,14 @@ test("validates server settings without exposing credential values", () => {
     { DAYMET_START_DATE: "2020-02-30" }, { DAYMET_END_DATE: "2019-01-01" },
     { DAYMET_END_DATE: "2023-01-01" }, { WEB_ORIGIN: "javascript:bad" },
     { LANDFIRE_VERSION: "wrong" }, { EARTHDATA_TOKEN: "  " },
+    { INFERENCE_URL: "ftp://models" }, { INFERENCE_URL: "http://user:secret@models" }, { INFERENCE_TIMEOUT_MS: "0" },
   ]) assert.throws(() => readConfig({ ...env, ...override }));
   const config = readConfig(env);
   assert.equal(config.port, 3001);
   assert.equal(config.defaults.forecastHours, 24);
+  assert.deepEqual(config.inference, { url: null, timeoutMs: 20000 });
+  assert.deepEqual(readConfig({ ...env, INFERENCE_URL: "http://127.0.0.1:8000/", INFERENCE_TIMEOUT_MS: "5000" }).inference,
+    { url: "http://127.0.0.1:8000", timeoutMs: 5000 });
   assert.ok(!JSON.stringify(config).includes("private-"));
 });
 
@@ -94,4 +101,51 @@ test("serves health, parses the web query, returns observations/bundle and sanit
   assert.equal(diagnosed.error.source, "Daymet");
   assert.equal(diagnosed.error.upstreamStatus, 404);
   assert.ok(!JSON.stringify(diagnosed).includes("private-"));
+});
+
+test("runs the models on the fetched bundle and falls back to observations when they fail", async t => {
+  const config = readConfig(env);
+  const bundle = makeBundle();
+  const modelFetch = (async (input: RequestInfo | URL) => new Response(JSON.stringify(
+    String(input).endsWith("/predict") ? occurrenceBody(bundle) : spreadBody(bundle)))) as typeof fetch;
+  let inference: InferenceResult = await createInference({ url: "http://inference.test", timeoutMs: 500 }, modelFetch)(bundle);
+  const received: unknown[] = [];
+  const app = createApp(config, async () => bundle,
+    async sent => { received.push(sent); return inference; },
+    async () => "connected");
+  const server = app.listen(0, "127.0.0.1");
+  await new Promise<void>((resolve, reject) => {
+    server.once("listening", resolve); server.once("error", reject);
+  });
+  t.after(() => new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve())));
+  const address = server.address();
+  assert.ok(address && typeof address !== "string");
+  const base = `http://127.0.0.1:${address.port}`;
+
+  assert.equal((await (await fetch(`${base}/health`)).json()).inference, "connected");
+  assert.equal(received.length, 0);
+
+  const ready = await (await fetch(`${base}/tiles?lat=34.05&long=-118.25`)).json();
+  assert.equal(received[0], bundle);
+  assert.equal(ready.status, "ready");
+  assert.equal(ready.updatedAt, "2026-11-15T09:00:00+00:00");
+  assert.equal(ready.cells.features.length, 784);
+  assert.equal(ready.cells.features[0].properties.riskScore, 0.7);
+  assert.equal(ready.spread.features.length, 3);
+  assert.equal(ready.drivers.windFromDeg, 270);
+  assert.equal(ready.model.spread.status, "ok");
+  assert.equal(ready.detections.features.length, 2);
+  assert.equal(ready.bundle.terrain.source, "USGS 3DEP");
+
+  const message = "Inference service is not reachable at http://127.0.0.1:8000.";
+  inference = { status: "failed", reason: "unreachable", message };
+  const observed = await fetch(`${base}/tiles?lat=34.05&long=-118.25`);
+  assert.equal(observed.status, 200);
+  const fallback = await observed.json();
+  assert.equal(fallback.status, "observed");
+  assert.equal(fallback.updatedAt, null);
+  assert.deepEqual(fallback.cells.features, []);
+  assert.equal(fallback.model, null);
+  assert.deepEqual(fallback.inference, { status: "failed", reason: "unreachable", message });
+  assert.equal(fallback.detections.features.length, 2);
 });

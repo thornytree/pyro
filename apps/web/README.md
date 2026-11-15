@@ -3,8 +3,8 @@
 The website: interactive US heat map of current and predicted wildfires.
 
 - Sends `lat`, `long` to `apps/orchestrator` (`GET /tiles`). Base URL comes from `VITE_ORCHESTRATOR_URL`.
-- Will render model output from `apps/inference`, relayed by the orchestrator. Until that exists:
-  - **Against the orchestrator** (`VITE_USE_MOCK=false`): a tile shows real FIRMS detections and the panel says source data loaded, with no probability cells. The state preview is empty. Historical replay is disabled because `/history` routes are not implemented. The panel shows source data for the clicked region and offers its JSON download.
+- Renders model output from `apps/inference`, relayed by the orchestrator:
+  - **Against the orchestrator** (`VITE_USE_MOCK=false`): a tile shows real FIRMS detections, the occurrence model's cells and, where a fire is confirmed, the spread model's outlines. Cells are coloured by `riskScore` (the legend reads "Fire risk score"); the panel gives the calibrated probability against the usual rate. If inference is off or fails the panel says why and shows source data only. The state preview is empty. Historical replay is disabled because `/history` routes are not implemented.
   - **Mock** (`VITE_USE_MOCK=true`): every feature works on generated data, including cells, spread and historical mode.
 
 ## Run
@@ -65,21 +65,23 @@ Mode logic (URL parsing, date range, the reference time detections are aged from
 - **Terrain: any raster DEM, contours generated in the browser.** `VITE_TERRAIN_DEM_URL` takes Terrarium or Mapbox Terrain-RGB tiles. The example is AWS Terrain Tiles (public, no key). Contours come from `maplibre-contour`, which builds them in a web worker from the same DEM tiles the hillshade uses, so there is no contour tile server. Hillshade and elevation tint are MapLibre's own `hillshade` and `color-relief` layers.
 - **Detection age and confidence (first pass).** Detections are dots that fade over 24 hours; the panel shows the age of the newest one. Cell colour is probability and cell opacity drops as uncertainty rises.
 
-## API contract (Express observations; Python inference pending)
+## API contract (Express observations and model output)
 
 `GET {VITE_ORCHESTRATOR_URL}/tiles?lat=<number>&long=<number>` returns:
 
 | Field | Type | Note |
 |---|---|---|
 | `tileId` | string | Opaque region ID; live requests cover 300 square miles centered on the point. |
-| `status` | `"observed"`, `"ready"` or `"queued"` | Live Express currently returns `observed`: real source data with no model output or queued task. |
+| `status` | `"ready"`, `"observed"` or `"queued"` | `ready`: model output in `cells`. `observed`: real source data only; `inference` says why. |
 | `bounds` | `[west, south, east, north]` | Degrees. |
 | `updatedAt` | ISO 8601 string or null | When the model output was produced. |
-| `cells` | GeoJSON FeatureCollection of Polygons | Properties: `probability` (0 to 1), `uncertainty` (0 to 1). |
+| `cells` | GeoJSON FeatureCollection of Polygons | Properties: `probability` (0 to 1), `uncertainty` (0 to 1). Live model cells add `riskScore` (0 to 1, used for colour) and `detections`. |
 | `detections` | GeoJSON FeatureCollection of Points | Properties: `source`, `acquiredAt` (ISO 8601 UTC), `confidence` (0 to 1 or null), `frpMw` (number or null). |
-| `spread` | GeoJSON FeatureCollection of Polygons, optional | Live only; empty when no cell is extreme. One feature per horizon. Properties: `horizonHours`, `confidence` (0 to 1), `origin` ([long, lat] where spread starts), `headingDeg` (clockwise from north), `rateKmh`, `headKm` (distance past `origin`). |
+| `spread` | GeoJSON FeatureCollection of Polygons, optional | Live only; empty when there is no confirmed fire (mock: when no cell is extreme). One feature per horizon. Properties: `horizonHours`, `confidence` (0 to 1), `origin` ([long, lat] where spread starts), `headingDeg` (clockwise from north), `rateKmh`, `headKm` (distance past `origin`), `areaKm2` (live model only). |
 | `drivers` | object or null, optional | Live only. Weather behind the spread: `observedAt`, `temperatureC`, `relativeHumidityPct`, `windSpeedKmh` (10 m), `windFromDeg`. |
 | `bundle` | `dataBundle`, required for `observed` | Full normalized source data for the selected point and 300-square-mile region. Type-only reference to the orchestrator schema; not generated mock data. |
+| `model` | object or null, live only | `version`, `predictionDate`, `baseRate`, `fireHistoryThrough`, `spread` (`status`: `ok`, `no_confirmed_fire` or `unavailable`). |
+| `inference` | object, live only | `status`: `ok`, `not_configured` or `failed` (with `reason`, `message`). |
 | `perimeters` | GeoJSON FeatureCollection of Polygons, optional | Historical only; empty where no perimeter data exists. Properties: `fireName`, `date` (YYYY-MM-DD), `source`, `areaKm2`. |
 
 Geometry is GeoJSON in EPSG:4326 so the web app does not depend on the model grid's cell size or projection. A non-2xx status is shown as an error. The exact types are in `src/api/types.ts`.

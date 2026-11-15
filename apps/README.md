@@ -12,7 +12,9 @@
 
 ```
 web --GET /tiles?lat&long--> orchestrator --fanOutEntry--> FIRMS, NOAA (Open-Meteo), Daymet, 3DEP, LANDFIRE
-web <--status "observed": detections + normalized bundle, no cells-- orchestrator
+                             orchestrator --POST /predict, POST /spread (bundle)--> inference
+web <--status "ready": cells, spread, drivers, detections, bundle-- orchestrator
+web <--status "observed": detections + bundle, if inference is off or fails-- orchestrator
 ```
 
 **Target:**
@@ -31,16 +33,16 @@ Training should use the same features the orchestrator builds at serve time. How
 | Folder | Work item | Status |
 |---|---|---|
 | `orchestrator/src/fan-out/` | 1. Point input, region, source retrieval and normalization | Done for live requests (all five sources). Optional scheduled 50 km grid path exists but is not started. |
-| `orchestrator/src/app.ts` | 1. HTTP API | `GET /health`, `GET /tiles` done. Preview returns empty. No inference call, no `/history` routes. |
+| `orchestrator/src/app.ts` | 1. HTTP API | `GET /health`, `GET /tiles` with model output done. Preview returns empty. No `/history` routes. |
 | `inference/sources/firms/` | 2. FIRMS archive | Done: 21 M detections harmonized. Live FIRMS is in the orchestrator. |
 | `inference/sources/weather/` | 2. Weather | Live: orchestrator (NOAA RRFS via Open-Meteo). Historical weather for training: not started. |
 | `inference/sources/topography/` | 2. Terrain and fuels | Live: orchestrator (3DEP, LANDFIRE). Historical fuel vintages for training: not started. |
 | `inference/sources/daymet/` | 2. Daymet | Retrieval in the orchestrator. Use in training: not started. |
 | `inference/harmonization/` | 2. Training bundles and features | Compiled training table and live bundle features done. |
 | `inference/model/training/` | 3. Training | Occurrence and spread models trained (`docs/handover/models.md`). Latent-state model still needs labels (NIFC / WFIGS, unverified). |
-| `inference/model/inference/` | 3. Inference service | `POST /predict` and `POST /spread` written; not yet called by the orchestrator. |
+| `inference/model/inference/` | 3. Inference service | `POST /predict` and `POST /spread`, called by the orchestrator on every `/tiles` request. |
 | `inference/shared/` | Schemas and grid | FIRMS schema and 50 km grid done. `dataBundle` schema not mirrored in Python yet. |
-| `web/` | Map site | Built; mock and observed-data modes work. Waits on model output. |
+| `web/` | Map site | Built; mock, observed-data and model-output modes work. |
 
 Owners are TBD for every item.
 
@@ -53,14 +55,14 @@ In dependency order. Details are in each folder's README.
 3. **Labels.** Verify NIFC / WFIGS (decision 8) and pull a sample.
 4. **Training data.** Produce historical bundles with the same features as live: FIRMS from the harmonized archive, historical weather (Open-Meteo archive or Daymet, checked against the live NOAA weather), LANDFIRE vintages for the training years.
 5. **Train** the latent-fire-state model (`docs/handover/model-outline.md`) and version the artifact outside git.
-6. **Inference service.** FastAPI `POST` route taking a `dataBundle`, returning per-cell `probability` and `uncertainty` (and later `spread`). Base URL from an environment variable.
-7. **Orchestrator integration.** After fan-out, call inference; merge cells into the tile response, set `status: "ready"` and `updatedAt`. If inference fails, still return `observed` data. Report it in `/health`.
-8. **Web.** Turn the real output on (it already renders `cells`), decide what the state preview shows, and build `/history` routes and spread on the backend or keep them mock-only.
+6. **Inference service.** Done for the classifier and spread models: `POST /predict`, `POST /spread` (`inference/app.py`).
+7. **Orchestrator integration.** Done (`orchestrator/src/inference.ts`, `INFERENCE_URL`). Still to do: run it against a real fan-out bundle.
+8. **Web.** Real cells and spread are rendered. Still to do: decide what the state preview shows, and build `/history` routes or keep them mock-only.
 
 ## Contracts
 
 `web` -> `orchestrator`: `GET /tiles?lat=&long=` is implemented (see `orchestrator/README.md`); `GET /states/{fips}/preview` exists but returns no tiles. `GET /history/...` and the `spread` / `drivers` / `perimeters` fields are web-side proposals in `web/README.md`.
 
-`orchestrator` -> `inference`: not defined yet (item 6 above).
+`orchestrator` -> `inference`: `POST /predict` and `POST /spread` with the `dataBundle` minus `historical_weather`; responses in `inference/model/inference/README.md`, merging in `orchestrator/README.md`.
 
 See `docs/handover/` for source decisions and risks.

@@ -2,12 +2,14 @@ import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import type { FanOutOptions } from "./fan-out/fan-out-entry.ts";
 import type { LandfireVersion } from "./fan-out/types.ts";
+import type { InferenceConfig } from "./inference.ts";
 
 export type ServerConfig = {
   host: string;
   port: number;
   webOrigin: string;
   defaults: FanOutOptions;
+  inference: InferenceConfig;
 };
 
 export function loadEnvironment(): void {
@@ -53,10 +55,26 @@ export function readConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
   } catch {
     throw new Error("WEB_ORIGIN must be an HTTP(S) origin, such as http://localhost:5173.");
   }
+  // Optional: without it /tiles returns observations only (status "observed").
+  let inferenceUrl: string | null = null;
+  if (env.INFERENCE_URL?.trim()) {
+    try {
+      const url = new URL(env.INFERENCE_URL.trim());
+      if (!["http:", "https:"].includes(url.protocol) || url.search || url.hash || url.username || url.password) throw new Error();
+      inferenceUrl = `${url.origin}${url.pathname}`.replace(/\/+$/, "");
+    } catch {
+      throw new Error("INFERENCE_URL must be an HTTP(S) URL without credentials or a query, such as http://127.0.0.1:8000.");
+    }
+  }
+  const inferenceTimeoutMs = Number(env.INFERENCE_TIMEOUT_MS ?? 20000);
+  if (!Number.isInteger(inferenceTimeoutMs) || inferenceTimeoutMs < 100 || inferenceTimeoutMs > 120000) {
+    throw new Error("INFERENCE_TIMEOUT_MS must be an integer between 100 and 120000.");
+  }
   const host = (env.HOST ?? "127.0.0.1").trim();
   if (!host) throw new Error("HOST cannot be empty.");
   return {
     host, port, webOrigin,
     defaults: { forecastHours, landfireVersion: version as LandfireVersion, daymet: { startDate, endDate } },
+    inference: { url: inferenceUrl, timeoutMs: inferenceTimeoutMs },
   };
 }

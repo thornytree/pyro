@@ -43,12 +43,19 @@ export const PERIMETER_COLOUR = "#ff4d4d";
 /** Detections older than this are drawn at minimum opacity. */
 export const DETECTION_FADE_HOURS = 24;
 
-const probabilityColour = (property: string): ExpressionSpecification => [
+const rampColour = (value: ExpressionSpecification): ExpressionSpecification => [
   "case",
-  ["!=", ["typeof", ["get", property]], "number"],
+  ["!=", ["typeof", value], "number"],
   NO_DATA_COLOUR,
-  ["interpolate", ["linear"], ["get", property], ...PROBABILITY_STOPS.flat()],
+  ["interpolate", ["linear"], value, ...PROBABILITY_STOPS.flat()],
 ];
+
+/**
+ * Live model cells carry `riskScore` and are coloured by it: their calibrated
+ * `probability` rarely leaves the bottom tenth of the ramp. Mock and
+ * historical cells have only `probability`.
+ */
+const CELL_VALUE: ExpressionSpecification = ["coalesce", ["get", "riskScore"], ["get", "probability"]];
 
 /**
  * Opacity [most certain, least certain]. Cells and preview squares are drawn
@@ -97,7 +104,7 @@ export const LAYERS: LayerSpecification[] = [
     type: "fill",
     source: PREVIEW_SOURCE,
     paint: {
-      "fill-color": probabilityColour("peakProbability"),
+      "fill-color": rampColour(["get", "peakProbability"]),
       "fill-opacity": uncertaintyOpacity("meanUncertainty", PREVIEW_OPACITY.plain),
     },
   },
@@ -126,7 +133,7 @@ export const LAYERS: LayerSpecification[] = [
     type: "fill",
     source: CELLS_SOURCE,
     paint: {
-      "fill-color": probabilityColour("probability"),
+      "fill-color": rampColour(CELL_VALUE),
       // Less certain cells are drawn fainter.
       "fill-opacity": uncertaintyOpacity("uncertainty", CELL_OPACITY.plain),
     },

@@ -1,7 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 import { ApiError, createStatePreviewFetcher, createTileFetcher } from "./client";
 import { toTileResponse } from "../../../orchestrator/src/tile-response";
+import { createInference } from "../../../orchestrator/src/inference";
 import { makeBundle } from "../../../orchestrator/tests/fixtures/bundle";
+import { occurrenceBody, spreadBody } from "../../../orchestrator/tests/fixtures/inference";
 import { LIVE } from "../lib/mode";
 import { buildMockTile } from "./mock";
 
@@ -46,6 +48,22 @@ describe("createTileFetcher", () => {
   it("accepts observed data before predictions are connected", async () => {
     const observed = toTileResponse(makeBundle({ latitude: point.lat, longitude: point.long }));
     await expect(createTileFetcher("http://api.test", fetchReturning(observed))(point, LIVE)).resolves.toEqual(observed);
+  });
+
+  it("accepts model output merged by the orchestrator and rejects a malformed model summary", async () => {
+    const bundle = makeBundle({ latitude: point.lat, longitude: point.long });
+    const models = fetchReturning(null);
+    models.mockImplementation(async (input) => new Response(JSON.stringify(
+      String(input).endsWith("/predict") ? occurrenceBody(bundle) : spreadBody(bundle))));
+    const ready = toTileResponse(bundle, await createInference({ url: "http://inference.test", timeoutMs: 500 }, models)(bundle));
+    const result = await createTileFetcher("http://api.test", fetchReturning(ready))(point, LIVE);
+    expect(result.status).toBe("ready");
+    expect(result.cells.features).toHaveLength(784);
+    expect(result.cells.features[0]?.properties.riskScore).toBe(0.7);
+    expect(result.spread?.features).toHaveLength(3);
+    expect(result.model?.spread.status).toBe("ok");
+    const broken = { ...ready, model: { ...ready.model, baseRate: "1%" } };
+    await expect(createTileFetcher("http://api.test", fetchReturning(broken))(point, LIVE)).rejects.toBeInstanceOf(ApiError);
   });
 
   it("rejects observations for a different selected point or mismatched provider extent", async () => {

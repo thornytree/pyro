@@ -2,7 +2,7 @@
 
 2026-11-15
 
-Both are trained, saved under `data/models` (gitignored) and served by `apps/inference/app.py`. Neither has been run against a real `GET /tiles` bundle yet, and the orchestrator does not call them yet.
+Both are trained, saved under `data/models` (gitignored) and served by `apps/inference/app.py`. The orchestrator calls both on every `GET /tiles`. Neither has been run against a real fan-out bundle yet.
 
 | | Model 1: occurrence | Model 2: spread |
 |---|---|---|
@@ -81,7 +81,7 @@ uv run python -m pytest
 
 ## Next
 
-1. Orchestrator: `POST` the bundle to `/predict` and `/spread`, merge `cells` and `spread` into the tile response.
+1. Done: the orchestrator posts the bundle to `/predict` and `/spread` and merges `cells` and `spread` (`apps/orchestrator/README.md`, "Model output").
 2. Check `bundle_features` against a real `GET /tiles` response.
 3. Validate spread against perimeters (Mendeley, WFIGS) and tune the rate.
 4. Add per-sensor likelihoods on top of model 1 once overpass masks and labels exist.

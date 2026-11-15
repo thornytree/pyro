@@ -32,7 +32,7 @@ FeatureCollection: there are no statewide model results yet, and it starts no jo
 `/tiles` waits for all five data providers, then returns the web GeoJSON envelope
 plus the full normalized `bundle`. `status: "observed"` means observations were
 retrieved, not a forecast or queued task. `cells` is empty and `updatedAt` is null
-until Python inference is connected. Detections are real FIRMS points with lon/lat
+unless Python inference is connected (see "Model output"). Detections are real FIRMS points with lon/lat
 GeoJSON coordinates. MODIS confidence is scaled from percent to 0–1; VIIRS keeps
 its category in `confidenceCategory` and has null numeric confidence.
 
@@ -51,12 +51,35 @@ Checks: `npm test --workspace @pyro/orchestrator`,
 
 See [source adapters](src/fan-out/README.md) for units, versions and grid semantics.
 
+## Model output
+
+Set `INFERENCE_URL` (see `.env.example`) and start `apps/inference` (`uv run uvicorn app:app --port 8000`).
+After fan-out, `/tiles` posts the bundle, without Daymet, to `POST /predict` and `POST /spread` at the same time
+(`src/inference.ts`) and merges the answers (`src/tile-response.ts`):
+
+| Outcome | Response |
+|---|---|
+| Both models answer | `status: "ready"`, `updatedAt`, `cells` (`probability`, `uncertainty`, `riskScore`, `detections`), `spread`, `drivers`, `model` |
+| No confirmed fire in the region | `ready` with an empty `spread`; `model.spread.status` is `no_confirmed_fire` |
+| Only `/spread` fails | `ready` with an empty `spread`; `model.spread.status` is `unavailable` |
+| `/predict` fails, times out (`INFERENCE_TIMEOUT_MS`) or returns something malformed | `status: "observed"` as before, plus `inference: { status: "failed", reason, message }` |
+| `INFERENCE_URL` unset | `observed`, `inference: { status: "not_configured" }` |
+
+Model failures never fail the request: detections and the bundle are always returned. `reason` is one of
+`unreachable`, `timeout`, `models_missing` (503: artifacts not trained), `bundle_rejected` (422), `bad_response`, `service_error`.
+`GET /health` reports `inference` as `connected`, `models_missing`, `unreachable` or `not_connected` (no URL).
+
+`model` carries `version`, `predictionDate`, `baseRate`, `fireHistoryThrough` and a `spread` summary.
+`probability` is calibrated to the real fire rate (about 1.4% of cell-days), so it stays in the low percents;
+`riskScore` is the uncalibrated 0 to 1 score the web map colours by. See `docs/handover/models.md`.
+
+Not yet checked against a real fan-out bundle: tests use the fixture bundle and stubbed model responses.
+
 ## Not built yet
 
-- **Inference call.** `/tiles` stops at observations: `cells` is empty, `updatedAt` is null and `/health` reports `inference: "not_connected"`. To add: an inference base URL in config, a call after fan-out with the `dataBundle`, merging the returned cells into the response with `status: "ready"`, and falling back to `observed` if inference fails or times out. The inference service and its route do not exist yet (`apps/inference/model/inference/README.md`).
 - **State preview.** `GET /states/{fips}/preview` returns no tiles. It needs model output for many regions at once, which the request-driven design does not produce; see the statewide-preview caveat in `apps/web/README.md`.
 - **Historical routes.** `GET /history/tiles` and `GET /history/states/{fips}/preview` are not implemented. The frontend disables historical replay with the real backend and keeps it available with mocks. Historical URL parameters normalize to live mode; live Daymet context is not a replay.
-- **Spread.** The web app accepts optional `spread` and `drivers` fields; nothing produces them.
+- **Spread burn-probability cells.** `/spread` also returns per-cell arrival times and burn probabilities; the orchestrator drops them because the web app only draws the outlines.
 - **Scheduled ingestion.** The 50 km grid and scheduler in `src/fan-out/` are not started. Whether to keep request-driven fetching (every click fetches five providers) or move to the scheduled design of decisions 2 and 11 needs a team decision; see `docs/handover/decisions.md`.
 
 ## Frontend contract alignment

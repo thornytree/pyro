@@ -45,15 +45,18 @@ function OverlayLegend({ overlay }: { overlay: Exclude<LegendOverlay, null> }) {
  * `terrain`: the tile view is drawing elevation under the heat map.
  * `overlay`: spread outlines (live) or perimeters (historical) on the map.
  * `historical`: cell colours are a hindcast, not a forecast.
+ * `relative`: cells are coloured by the live model's risk score, not a probability.
  */
 export function Legend({
   terrain,
   overlay,
   historical,
+  relative,
 }: {
   terrain: boolean;
   overlay: LegendOverlay;
   historical: boolean;
+  relative: boolean;
 }) {
   const gradient = PROBABILITY_STOPS.map(
     ([stop, colour]) => `${colour} ${stop * 100}%`,
@@ -61,16 +64,23 @@ export function Legend({
   return (
     <div className="legend">
       <div className="legend-title">
-        Fire probability{historical && " (hindcast for the chosen day)"}
+        {relative ? "Fire risk score" : "Fire probability"}
+        {historical && " (hindcast for the chosen day)"}
       </div>
       <div
         className="legend-bar"
         style={{ background: `linear-gradient(to right, ${gradient})` }}
       />
       <div className="legend-scale">
-        <span>0%</span>
-        <span>100%</span>
+        <span>{relative ? "Low" : "0%"}</span>
+        <span>{relative ? "High" : "100%"}</span>
       </div>
+      {relative && (
+        <p className="hint">
+          Colour ranks cells against each other. The chance of a detection is in the
+          panel: it stays in the low percents even for the brightest cells.
+        </p>
+      )}
       <div className="legend-nodata">
         <span className="swatch" style={{ background: NO_DATA_COLOUR }} /> No model
         output yet

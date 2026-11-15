@@ -1,12 +1,12 @@
 # model/inference
 
-Status (2026-11-15): `occurrence.py` (`POST /predict`) and `spread.py` (`POST /spread`) take the bundle and return GeoJSON as proposed below, plus `riskScore` per cell. The orchestrator side is not built. See `docs/handover/models.md`.
+Status (2026-11-15): `occurrence.py` (`POST /predict`) and `spread.py` (`POST /spread`) take the bundle and return GeoJSON as below, plus `riskScore` per cell. The orchestrator calls both on every `GET /tiles` (`apps/orchestrator/src/inference.ts`) and validates the fields it merges, so change the response shape on both sides together. See `docs/handover/models.md`.
 
 - **Input:** the `dataBundle` the orchestrator builds in `GET /tiles` (see `apps/orchestrator/src/fan-out/types.ts`), plus the model artifact from `training/`.
 - **Exposed as:** a FastAPI route called by `apps/orchestrator` after fan-out.
 - **Output:** per-cell burn probability with uncertainty; later, spread.
 
-## Proposed shape (not agreed)
+## Shape (implemented)
 
 The orchestrator already returns the web's tile envelope with empty `cells`. The simplest integration is for inference to fill them:
 

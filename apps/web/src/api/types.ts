@@ -1,5 +1,6 @@
-// Live observation contract implemented by Express. Historical/model fields remain
-// optional until those backend routes exist. GeoJSON coordinates use EPSG:4326.
+// Live contract implemented by Express: observations plus model output from
+// apps/inference when it is connected. Historical fields remain optional until
+// those backend routes exist. GeoJSON coordinates use EPSG:4326.
 import type { FeatureCollection, Point, Polygon, Position } from "geojson";
 import type { dataBundle } from "../../../orchestrator/src/fan-out/types";
 import type { MapMode } from "../lib/mode";
@@ -18,6 +19,13 @@ export interface CellProperties {
   probability: number;
   /** Uncertainty of that probability, 0 (certain) to 1. */
   uncertainty: number;
+  /**
+   * Live model only: the uncalibrated 0 to 1 score behind `probability`.
+   * Real probabilities sit near the 1.4% base rate, so the map colours by this.
+   */
+  riskScore?: number;
+  /** Live model only: FIRMS detections inside the cell. */
+  detections?: number;
 }
 
 export interface DetectionProperties {
@@ -36,8 +44,7 @@ export type CellCollection = FeatureCollection<Polygon, CellProperties>;
 export type DetectionCollection = FeatureCollection<Point, DetectionProperties>;
 
 /**
- * Weather behind the spread prediction, sampled at the extreme-risk area.
- * Live model output only; the observation bundle has its own regional weather grid.
+ * Weather behind the spread prediction: the bundle's reading at the selected point.
  */
 export interface WeatherDrivers {
   /** ISO 8601 UTC time of the weather sample. */
@@ -66,6 +73,8 @@ export interface SpreadProperties {
   rateKmh: number;
   /** How far the head fire runs past `origin` by this horizon, km. */
   headKm: number;
+  /** Live model only: area inside the outline. */
+  areaKm2?: number;
 }
 
 export type SpreadCollection = FeatureCollection<Polygon, SpreadProperties>;
@@ -82,23 +91,60 @@ export interface PerimeterProperties {
 
 export type PerimeterCollection = FeatureCollection<Polygon, PerimeterProperties>;
 
+/** Spread model outcome for a live tile. */
+export type SpreadSummary =
+  | {
+      status: "ok";
+      version: string;
+      /** The confirmed fire the spread starts from. */
+      fire: { detections: number; cells: number; sensors: number; frpMaxMw: number | null };
+      /** Learned chance that this fire reaches a neighbouring 10 km cell by tomorrow. */
+      neighbourCellProbability: number;
+      meanSpreadKmPerDay: number;
+    }
+  /** No nominal- or high-confidence detection in the last 24 h. */
+  | { status: "no_confirmed_fire"; version: string }
+  /** The probabilities arrived but the spread call failed. */
+  | { status: "unavailable"; message: string | null };
+
+/** What the live models' numbers mean. Null or absent when there is no model output. */
+export interface ModelInfo {
+  version: string;
+  /** Local day the probabilities are for, YYYY-MM-DD. */
+  predictionDate: string;
+  /** Real-world share of cell-days with a detection; `probability` is on this scale. */
+  baseRate: number;
+  /** Last day of the FIRMS archive behind the fire-history inputs. */
+  fireHistoryThrough: string | null;
+  spread: SpreadSummary;
+}
+
+/** Whether the orchestrator got model output for this request, and if not, why. */
+export type InferenceInfo =
+  | { status: "ok" | "not_configured" }
+  | { status: "failed"; reason: string; message: string };
+
 export interface TileResponse {
   /** Opaque region ID. Live regions cover 300 square miles around the requested point. */
   tileId: string;
-  /** "observed": source data loaded, no model output. "queued": actual pending model work. */
+  /** "ready": model output in `cells`. "observed": source data only. "queued": pending model work. */
   status: TileStatus;
   /** [west, south, east, north] in degrees. */
   bounds: [number, number, number, number];
   /** When the model output was produced; null while queued. */
   updatedAt: string | null;
-  /** Required for observed live responses; absent from generated mock tiles. */
+  /** Present on every live response, required for observed ones; absent from generated mock tiles. */
   bundle?: dataBundle;
   cells: CellCollection;
   detections: DetectionCollection;
-  /** Live only: spread outlines around extreme-risk cells. Empty when no cell is extreme. */
+  /** Live only: spread outlines from the confirmed fire. Empty when there is none. */
   spread?: SpreadCollection;
   /** Live only: the weather the spread was computed from; null if none was sampled. */
   drivers?: WeatherDrivers | null;
+  /** Live Express only. */
+  model?: ModelInfo | null;
+  /** Live Express only. */
+  inference?: InferenceInfo;
   /** Historical only: observed perimeters on that day. Empty where no perimeter data exists. */
   perimeters?: PerimeterCollection;
 }
