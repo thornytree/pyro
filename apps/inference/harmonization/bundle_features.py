@@ -83,6 +83,22 @@ def region_of(bundle: dict) -> Region:
                  (bounds["east"] - bounds["west"]) * KM_PER_DEGREE * np.cos(np.radians(latitude.mean())) / columns))
 
 
+def nearest_fill(values: np.ndarray, valid: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """Copy each invalid cell's value from the nearest valid cell of a (rows, columns, ...) grid.
+
+    Returns (filled values, mask of cells that were filled). With no valid
+    cell at all the values come back unchanged and nothing counts as filled.
+    """
+    if valid.all() or not valid.any():
+        return values, np.zeros(valid.shape, dtype=bool)
+    rows, columns = np.nonzero(valid)
+    out = values.copy()
+    for r, c in zip(*np.nonzero(~valid)):
+        nearest = np.argmin((rows - r) ** 2 + (columns - c) ** 2)
+        out[r, c] = values[rows[nearest], columns[nearest]]
+    return out, ~valid
+
+
 def grid_values(source: dict, field: str, region: Region) -> np.ndarray:
     """One field of a terrain or vegetation grid as (rows, columns) floats; null becomes NaN.
 
@@ -146,15 +162,24 @@ def weather_features(bundle: dict, region: Region) -> pd.DataFrame:
 
 # --- Terrain ------------------------------------------------------------------
 
-def terrain_features(bundle: dict, region: Region) -> pd.DataFrame:
-    """Elevation, slope and aspect summarised over a window around each cell (the topo_* columns)."""
+def terrain_features(bundle: dict, region: Region, filled: list | None = None) -> pd.DataFrame:
+    """Elevation, slope and aspect summarised over a window around each cell (the topo_* columns).
+
+    Pass a list as `filled` to get the mask of cells whose terrain came from a neighbour.
+    """
     source = _require(_require(bundle, "terrain", "bundle"), "grid", "terrain")
     elevation, slope, aspect = (grid_values(source, f, region) for f in ("elevation_m", "slope_degrees", "aspect_degrees"))
+    if np.isnan(elevation).all() or np.isnan(slope).all():
+        raise BundleError("terrain.grid has no elevation or slope values")
+    # Cells 3DEP has no value for (water, edges of coverage) take the nearest cell's terrain.
+    missing = np.isnan(elevation) | np.isnan(slope)
+    stacked, terrain_filled = nearest_fill(np.stack([elevation, slope, aspect], axis=-1), ~missing)
+    if filled is not None:
+        filled.append(terrain_filled)
+    elevation, slope, aspect = np.moveaxis(stacked, -1, 0)
     flat = np.isnan(aspect)                       # 3DEP reports no aspect for flat cells
     north = np.where(flat, 0.0, np.cos(np.radians(np.nan_to_num(aspect))))
     east = np.where(flat, 0.0, np.sin(np.radians(np.nan_to_num(aspect))))
-    if np.isnan(elevation).all() or np.isnan(slope).all():
-        raise BundleError("terrain.grid has no elevation or slope values")
     w, out = TERRAIN_WINDOW_CELLS, []
     for r in range(region.rows):
         for c in range(region.columns):
@@ -204,24 +229,43 @@ def merged_fire_keys(archive_keys: np.ndarray, detections: pd.DataFrame) -> np.n
     return keys if len(keys) else np.array([-1], dtype="int64")  # fire_history needs one key; -1 matches no cell
 
 
-def occurrence_features(bundle: dict, archive_keys: np.ndarray) -> tuple[Region, pd.DataFrame]:
-    """One row per region cell (row-major) with every column the occurrence model takes."""
+def occurrence_features(bundle: dict, archive_keys: np.ndarray, filled: list | None = None) -> tuple[Region, pd.DataFrame]:
+    """One row per region cell (row-major) with every column the occurrence model takes.
+
+    A cell missing an input (outside the trained CONUS grid, no terrain or
+    weather value) takes that input from the nearest cell in the region that
+    has it. Pass a list as `filled` to get the (rows, columns) mask of those cells.
+    """
     region = region_of(bundle)
     day = local_day(region) + 1
     date = EPOCH + pd.Timedelta(days=day)
     season = 2 * np.pi * (date.dayofyear - 1) / 365.25  # as compile_dataset
     x, y = grid.to_albers(region.latitude.ravel(), region.longitude.ravel())
     cell_row, cell_col = grid.cell_index(x, y)
-    if (cell_row < 0).any():
+    inside = (cell_row >= 0).reshape(region.shape)
+    if not inside.any():
         raise BundleError("The region is outside the CONUS model grid")
+    # Cells past the grid's edge (offshore, over the border) use the nearest inside cell's fire history.
+    grid_cells, outside = nearest_fill(np.stack([cell_row, cell_col], axis=-1).reshape(*region.shape, 2), inside)
+    cell_row, cell_col = grid_cells[..., 0].ravel(), grid_cells[..., 1].ravel()
     keys = merged_fire_keys(archive_keys, detections_frame(bundle))
     history = fire_history(keys, cell_row, cell_col, np.full(len(cell_row), day))
     frame = pd.concat([
         pd.DataFrame({"latitude": region.latitude.ravel(), "longitude": region.longitude.ravel(),
                       "doy_sin": np.sin(season), "doy_cos": np.cos(season)}),
-        pd.DataFrame(history), weather_features(bundle, region), terrain_features(bundle, region),
-    ], axis=1)
-    return region, frame[features.OCCURRENCE_FEATURES]
+        pd.DataFrame(history), weather_features(bundle, region), terrain_features(bundle, region, terrain_filled := []),
+    ], axis=1)[features.OCCURRENCE_FEATURES].astype("float64")
+    values = frame.to_numpy().reshape(*region.shape, frame.shape[1])
+    valid = np.isfinite(values)
+    columns_filled = terrain_filled[0].copy()
+    for k in np.nonzero(~valid.all(axis=(0, 1)))[0]:
+        if not valid[..., k].any():
+            raise BundleError(f"No cell in the region has a value for {frame.columns[k]}")
+        values[..., k], mask = nearest_fill(values[..., k], valid[..., k])
+        columns_filled |= mask
+    if filled is not None:
+        filled.append(outside | columns_filled)
+    return region, pd.DataFrame(values.reshape(-1, frame.shape[1]), columns=frame.columns)
 
 
 def cell_polygon(region: Region, row: int, column: int) -> list:

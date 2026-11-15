@@ -7,6 +7,12 @@ import { SourceFetchError } from "./fan-out/source-error.ts";
 import { createInference, inferenceHealth } from "./inference.ts";
 import type { RunInference } from "./inference.ts";
 import { toTileResponse } from "./tile-response.ts";
+import { summarizeActiveFires } from "./active-fires.ts";
+import type { ActiveFire } from "./active-fires.ts";
+import { fetchFirmsNationwide } from "./fan-out/firms.ts";
+
+/** FIRMS is polled at most this often for GET /fires, whatever the traffic. */
+const FIRES_TTL_MS = 10 * 60_000;
 
 class RequestError extends Error {
   constructor(readonly status: number, readonly code: string, message: string) { super(message); }
@@ -45,7 +51,9 @@ export function createApp(
   runFanOut: typeof fanOutEntry = fanOutEntry,
   runInference: RunInference = createInference(config.inference),
   checkInference: () => ReturnType<typeof inferenceHealth> = () => inferenceHealth(config.inference),
+  fetchNational: typeof fetchFirmsNationwide = fetchFirmsNationwide,
 ) {
+  let fires: { at: number; body: { fetchedAt: string; fires: ActiveFire[] } } | null = null;
   const app = express();
   app.disable("x-powered-by");
   app.use((req, res, next) => {
@@ -68,7 +76,7 @@ export function createApp(
       regionAreaSqMiles: 300,
       sources: ["Open-Meteo", "FIRMS", "Daymet", "USGS 3DEP", "LANDFIRE"],
       defaults: config.defaults,
-      endpoints: ["GET /health", "GET /tiles?lat=&long=", "GET /states/:fips/preview"],
+      endpoints: ["GET /health", "GET /tiles?lat=&long=", "GET /fires", "GET /states/:fips/preview"],
     });
   };
   app.get("/", health);
@@ -109,6 +117,26 @@ export function createApp(
     if (inference.status === "failed") console.warn(`Inference failed (${inference.reason}): ${inference.message}`);
     else if (inference.status === "ok" && inference.spreadError) console.warn(`Spread model failed (${inference.spreadError.reason}): ${inference.spreadError.message}`);
     res.set("Cache-Control", "no-store").json(toTileResponse(bundle, inference));
+  });
+
+  // Confirmed fire across CONUS: where the spread model has something to predict from.
+  app.get("/fires", async (_req, res) => {
+    if (!fires || Date.now() - fires.at > FIRES_TTL_MS) {
+      try {
+        const national = await fetchNational({ days: 2 });
+        fires = {
+          at: Date.now(),
+          body: { fetchedAt: national.fetched_at, fires: summarizeActiveFires(national.detections, Date.now()) },
+        };
+      } catch (error) {
+        // Provider errors may carry the MAP_KEY; never serialize them. Messages
+        // thrown by fan-out/firms.ts are fixed text without the URL, so log those.
+        console.warn(`GET /fires: ${error instanceof Error ? error.message : "unknown FIRMS failure"}`);
+        res.status(502).json({ error: { code: "SOURCE_FETCH_FAILED", source: "FIRMS", message: "The FIRMS fire detections could not be loaded." } });
+        return;
+      }
+    }
+    res.set("Cache-Control", "no-store").json(fires.body);
   });
 
   app.get("/states/:fips/preview", (req, res) => {

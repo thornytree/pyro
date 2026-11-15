@@ -83,6 +83,37 @@ def test_bundle_detections_become_fire_history():
     assert frame["firms_neighbour_fire_days_prev1d"].max() == 1
 
 
+def test_cells_missing_terrain_take_it_from_their_neighbours():
+    bundle = make_bundle()
+    cells = bundle["terrain"]["grid"]["cells"]
+    for i in range(0, 28 * 5):          # the top five rows have no 3DEP values
+        cells[i] = {**cells[i], "elevation_m": None, "slope_degrees": None, "aspect_degrees": None}
+    filled = []
+    _, frame = bundle_features.occurrence_features(bundle, NO_HISTORY, filled)
+    assert not frame.isna().any().any()
+    assert frame.shape == (28 * 28, len(features.OCCURRENCE_FEATURES))
+
+
+def test_cells_outside_the_model_grid_use_the_nearest_inside_cell():
+    # Straddles the northern edge of the CONUS frame: some cells fall outside it.
+    from shared import grid
+    lat, _ = grid.from_albers(-1_000_000.0, grid.Y_MAX - 5_000.0)
+    bundle = make_bundle(lat=float(lat), lon=-110.0)
+    filled = []
+    _, frame = bundle_features.occurrence_features(bundle, NO_HISTORY, filled)
+    assert not frame.isna().any().any()
+    assert filled[0].any() and not filled[0].all()
+
+
+def test_predict_bundle_marks_filled_cells():
+    bundle = make_bundle()
+    cells = bundle["terrain"]["grid"]["cells"]
+    cells[0] = {**cells[0], "elevation_m": None, "slope_degrees": None, "aspect_degrees": None}
+    out = occurrence.predict_bundle(bundle, occurrence_artifact(), NO_HISTORY)
+    flags = [f["properties"]["filled"] for f in out["cells"]["features"]]
+    assert flags[0] and sum(flags) == 1
+
+
 def test_a_bundle_without_a_weather_grid_is_rejected():
     bundle = make_bundle()
     del bundle["weather_grid"]

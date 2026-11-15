@@ -1,4 +1,6 @@
 import type {
+  ActiveFire,
+  ActiveFireFetcher,
   LatLong,
   StatePreview,
   StatePreviewFetcher,
@@ -183,5 +185,31 @@ export function createStatePreviewFetcher(
       throw new ApiError("Orchestrator response does not match the state preview schema");
     }
     return body;
+  };
+}
+
+function isActiveFire(value: unknown): value is ActiveFire {
+  const fire = record(value);
+  return !!fire && typeof fire.newestAt === "string" &&
+    ["latitude", "longitude", "detections", "sensors"].every(key =>
+      typeof fire[key] === "number" && Number.isFinite(fire[key])) &&
+    (fire.frpMaxMw === null || typeof fire.frpMaxMw === "number");
+}
+
+/** Confirmed fires across CONUS: GET {baseUrl}/fires. */
+export function createActiveFireFetcher(
+  baseUrl: string,
+  fetchImpl: typeof fetch = fetch,
+): ActiveFireFetcher {
+  return async (signal?: AbortSignal) => {
+    const response = await fetchImpl(`${baseUrl}/fires`, { signal });
+    if (!response.ok) {
+      throw await responseError(response);
+    }
+    const fires = record(await response.json())?.fires;
+    if (!Array.isArray(fires) || !fires.every(isActiveFire)) {
+      throw new ApiError("Orchestrator response does not match the active fire schema");
+    }
+    return fires;
   };
 }

@@ -149,3 +149,49 @@ test("runs the models on the fetched bundle and falls back to observations when 
   assert.deepEqual(fallback.inference, { status: "failed", reason: "unreachable", message });
   assert.equal(fallback.detections.features.length, 2);
 });
+
+test("lists confirmed fires from one cached nationwide FIRMS poll", async t => {
+  const now = Date.now();
+  const detection = (latitude: number, longitude: number, hoursAgo: number, value: "low" | "nominal" | "high") => ({
+    source: "VIIRS_SNPP_NRT" as const, instrument: "VIIRS" as const, satellite: "N", tile_id: "r01c01",
+    location: { latitude, longitude }, observation_time: new Date(now - hoursAgo * 3_600_000).toISOString(),
+    frp_mw: 12, scan_km: 0.4, track_km: 0.4, confidence: { kind: "category" as const, value },
+  });
+  let polls = 0;
+  const app = createApp(readConfig(env), async () => makeBundle(), async () => ({ status: "not_configured" }),
+    async () => "not_connected",
+    async () => {
+      polls++;
+      return { fetched_at: new Date(now).toISOString(), days: 2, detections: [
+        detection(39.01, -121.01, 2, "high"), detection(39.02, -121.02, 3, "nominal"),
+        detection(34.6, -118.1, 1, "nominal"),
+        detection(45.1, -110.1, 1, "low"), detection(41.1, -100.1, 30, "high"),
+      ] };
+    });
+  const server = app.listen(0, "127.0.0.1");
+  await new Promise<void>((resolve, reject) => {
+    server.once("listening", resolve); server.once("error", reject);
+  });
+  t.after(() => new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve())));
+  const address = server.address();
+  assert.ok(address && typeof address !== "string");
+  const base = `http://127.0.0.1:${address.port}`;
+
+  const body = await (await fetch(`${base}/fires`)).json();
+  // Low-confidence and day-old detections are not confirmed fire.
+  assert.deepEqual(body.fires.map((f: { detections: number }) => f.detections), [2, 1]);
+  assert.ok(Math.abs(body.fires[0].latitude - 39.015) < 1e-9);
+  assert.equal(body.fires[0].frpMaxMw, 12);
+  await fetch(`${base}/fires`);
+  assert.equal(polls, 1);
+
+  const failing = createApp(readConfig(env), async () => makeBundle(), async () => ({ status: "not_configured" }),
+    async () => "not_connected", async () => { throw new Error("https://firms.test/private-firms"); }).listen(0, "127.0.0.1");
+  await new Promise<void>(resolve => failing.once("listening", resolve));
+  t.after(() => new Promise<void>(resolve => failing.close(() => resolve())));
+  const failingAddress = failing.address();
+  assert.ok(failingAddress && typeof failingAddress !== "string");
+  const failed = await fetch(`http://127.0.0.1:${failingAddress.port}/fires`);
+  assert.equal(failed.status, 502);
+  assert.ok(!JSON.stringify(await failed.json()).includes("private-"));
+});

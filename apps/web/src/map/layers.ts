@@ -12,6 +12,8 @@ export const USER_SOURCE = "pyro-user-location";
 export const SPREAD_SOURCE = "pyro-spread";
 export const SPREAD_ARROW_SOURCE = "pyro-spread-arrow";
 export const PERIMETER_SOURCE = "pyro-perimeters";
+/** The tile a click would load, drawn under the cursor (live only). */
+export const HOVER_REGION_SOURCE = "pyro-region-hover";
 
 /** Layers toggled together by "Show predicted spread". */
 export const SPREAD_LAYER_IDS = ["pyro-spread-fill", "pyro-spread-line", "pyro-spread-arrow"];
@@ -39,6 +41,9 @@ export const PROBABILITY_STOPS: ReadonlyArray<readonly [number, string]> = [
 /** Predicted spread (live) and observed perimeters (historical). Distinct from the probability ramp. */
 export const SPREAD_COLOUR = "#5ce1e6";
 export const PERIMETER_COLOUR = "#ff4d4d";
+
+/** Outline of the selected tile and the open state. */
+export const SELECTED_COLOUR = "#fe9f6d";
 
 /** Detections older than this are drawn at minimum opacity. */
 export const DETECTION_FADE_HOURS = 24;
@@ -177,10 +182,38 @@ export const LAYERS: LayerSpecification[] = [
     paint: { "line-color": SPREAD_COLOUR, "line-width": 2.5 },
   },
   {
+    id: "pyro-region-hover-fill",
+    type: "fill",
+    source: HOVER_REGION_SOURCE,
+    paint: { "fill-color": "#ffffff", "fill-opacity": 0.1 },
+  },
+  {
+    id: "pyro-region-hover-line",
+    type: "line",
+    source: HOVER_REGION_SOURCE,
+    paint: { "line-color": "#ffffff", "line-width": 1.5 },
+  },
+  {
+    // The selected tile. Filled while it loads, since there are no cells to show yet.
+    id: "pyro-tile-fill",
+    type: "fill",
+    source: TILE_SOURCE,
+    paint: {
+      "fill-color": SELECTED_COLOUR,
+      "fill-opacity": ["case", ["boolean", ["get", "loading"], false], 0.22, 0],
+    },
+  },
+  {
+    id: "pyro-tile-outline-casing",
+    type: "line",
+    source: TILE_SOURCE,
+    paint: { "line-color": "#0b0b10", "line-width": 5, "line-opacity": 0.7 },
+  },
+  {
     id: "pyro-tile-outline",
     type: "line",
     source: TILE_SOURCE,
-    paint: { "line-color": "#ffffff", "line-width": 1.5, "line-dasharray": [3, 2] },
+    paint: { "line-color": SELECTED_COLOUR, "line-width": 2.5 },
   },
   {
     id: "pyro-detections",

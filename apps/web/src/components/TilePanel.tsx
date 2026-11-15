@@ -97,6 +97,7 @@ function TileSummary({
   const extreme = tile.cells.features.filter(
     (f) => (f.properties.riskScore ?? f.properties.probability) >= EXTREME_PROBABILITY,
   ).length;
+  const filled = tile.cells.features.filter((f) => f.properties.filled).length;
   const ages = tile.detections.features.map((f) => ageHours(f.properties.acquiredAt, reference));
   const newest = ages.length > 0 ? Math.min(...ages) : null;
   const historical = mode.kind === "historical";
@@ -126,6 +127,12 @@ function TileSummary({
           {model ? "High-risk cells (score ≥ " : "Extreme cells (≥ "}{percent(EXTREME_PROBABILITY)})
         </dt>
         <dd>{extreme}</dd>
+        {filled > 0 && (
+          <>
+            <dt>Cells filled from neighbours</dt>
+            <dd>{filled.toLocaleString("en-US")}</dd>
+          </>
+        )}
         <dt>{historical ? "Detections that day" : "Satellite detections"}</dt>
         <dd>
           {ages.length}
@@ -188,7 +195,7 @@ function SourceData({ tile }: { tile: TileResponse }) {
 /** Why a tile has no spread outlines. The mock predicts spread from extreme cells; the model from confirmed fire. */
 function noSpreadReason(model: ModelInfo | null): string {
   if (model?.spread.status === "no_confirmed_fire") {
-    return "No nominal- or high-confidence detection in the last 24 hours, so no spread is predicted for this region.";
+    return "The spread model starts from a confirmed fire, and this region has no nominal- or high-confidence detection in the last 24 hours. Open one under Active fires to see a prediction.";
   }
   if (model?.spread.status === "unavailable") {
     return "The spread model did not answer for this region. The probabilities are unaffected.";

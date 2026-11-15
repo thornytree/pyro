@@ -67,11 +67,14 @@ export function normalizeFireAttributes(datasets: FirmsDataset[]): FireAttribute
         confidence = { kind: "percent", value: numeric(row.confidence, "confidence", 0, 100) };
       } else {
         const category = String(row.confidence).trim().toLowerCase();
+        // VIIRS uses l/n/h; Landsat uses L/M/H, with medium on par with VIIRS nominal
+        // (as apps/inference/sources/firms/normalize.py).
         const categories: Record<string, "low" | "nominal" | "high"> = {
-          l: "low", n: "nominal", h: "high", low: "low", nominal: "nominal", high: "high",
+          l: "low", n: "nominal", m: "nominal", h: "high",
+          low: "low", nominal: "nominal", medium: "nominal", high: "high",
         };
         const value = Object.hasOwn(categories, category) ? categories[category] : undefined;
-        if (!value) throw new Error("Invalid FIRMS VIIRS confidence.");
+        if (!value) throw new Error(`Invalid FIRMS ${instrument} confidence.`);
         confidence = { kind: "category", value };
       }
       if (!row.satellite?.trim()) throw new Error("Missing FIRMS satellite.");
@@ -166,7 +169,9 @@ async function getFireAttributes(
   options: { days?: number; mapKey?: string } = {},
 ): Promise<FireAttributes> {
   return fetchFirmsArea(createRegionBounds(lat, long), sources.filter(source => source !== "LANDSAT_NRT"),
-    { ...options, days: options.days ?? 1 });
+    // Two days: a day range of 1 is the current UTC date only, which just after
+    // 00:00 UTC drops fires the spread model still counts as confirmed (last 24 h).
+    { ...options, days: options.days ?? 2 });
 }
 
 export default getFireAttributes

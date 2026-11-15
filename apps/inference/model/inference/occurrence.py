@@ -28,7 +28,9 @@ def predict_frame(artifact: dict, frame: pd.DataFrame) -> dict[str, np.ndarray]:
 
 def predict_bundle(bundle: dict, artifact: dict, archive_keys: np.ndarray) -> dict:
     """The `cells` part of the tile response, plus what the numbers mean."""
-    region, frame = bundle_features.occurrence_features(bundle, archive_keys)
+    filled: list = []
+    region, frame = bundle_features.occurrence_features(bundle, archive_keys, filled)
+    filled_mask = filled[0]
     out = predict_frame(artifact, frame)
     detections = bundle_features.detections_frame(bundle)
     d_row, d_col = region.cell_of(detections["latitude"], detections["longitude"])
@@ -45,6 +47,7 @@ def predict_bundle(bundle: dict, artifact: dict, archive_keys: np.ndarray) -> di
                 "uncertainty": round(float(out["uncertainty"][i]), 4),
                 "riskScore": round(float(out["score"][i]), 4),
                 "detections": int(detected[row, column]),
+                "filled": bool(filled_mask[row, column]),
             },
         })
     archive_end = EPOCH + pd.Timedelta(days=int((archive_keys % DAY_SPAN).max())) if len(archive_keys) else None

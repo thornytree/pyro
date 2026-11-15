@@ -402,3 +402,27 @@ button:disabled {
 .swatch.outline.dashed {
   border-style: dashed;
 }
+
+.active-fires {
+  padding-top: 12px;
+  margin-bottom: 12px;
+  border-top: 1px solid var(--border);
+}
+
+.active-fires h3 {
+  margin: 0 0 6px;
+  font-size: 14px;
+}
+
+.active-fires ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 6px;
+}
+
+.active-fires li button {
+  width: 100%;
+  text-align: left;
+}

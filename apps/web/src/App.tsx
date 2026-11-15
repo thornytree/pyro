@@ -1,15 +1,18 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { createStatePreviewFetcher, createTileFetcher } from "./api/client";
+import { createActiveFireFetcher, createStatePreviewFetcher, createTileFetcher } from "./api/client";
 import { createMockStatePreviewFetcher, mockTileFetcher } from "./api/mock";
-import type { LatLong } from "./api/types";
+import type { ActiveFire, LatLong } from "./api/types";
+import { ActiveFires, type FireList } from "./components/ActiveFires";
 import { Legend, type LegendOverlay } from "./components/Legend";
 import { ModeSwitch } from "./components/ModeSwitch";
 import { StatePanel, type PreviewSelection } from "./components/StatePanel";
 import { TilePanel, type Selection } from "./components/TilePanel";
 import type { AppConfig } from "./config";
 import { isInConusBounds } from "./lib/conus";
+import type { Bounds } from "./lib/geo";
 import { locate } from "./lib/geolocation";
 import { type MapMode, modeFromSearch, modeLabel, modeToSearch, sameMode, supportedMode } from "./lib/mode";
+import { regionBounds, snapToRegion } from "./lib/region";
 import { conusStates, stateAt, type StateFeature } from "./lib/states";
 import { MapView } from "./map/MapView";
 
@@ -47,6 +50,7 @@ export function App({ config }: { config: AppConfig }) {
   const [state, setState] = useState<StateFeature | null>(null);
   const [preview, setPreview] = useState<PreviewSelection>({ kind: "loading" });
   const [selection, setSelection] = useState<Selection>({ kind: "idle" });
+  const [selectedBounds, setSelectedBounds] = useState<Bounds | null>(null);
   const [userLocation, setUserLocation] = useState<LatLong | null>(null);
   const [locationStatus, setLocationStatus] = useState<LocationStatus>({ kind: "idle" });
   const lastPoint = useRef<LatLong | null>(null);
@@ -56,15 +60,25 @@ export function App({ config }: { config: AppConfig }) {
   const tileRequest = useRef<AbortController | null>(null);
   const previewRequest = useRef<AbortController | null>(null);
 
+  /**
+   * Loads the region around a point. Live clicks snap to the region grid, so
+   * the tile outlined under the cursor is the one that loads; `exact` centres
+   * the region on the point instead.
+   */
   const select = useCallback(
-    async (point: LatLong) => {
+    async (clicked: LatLong, exact = false) => {
       // A newer click supersedes any request still in flight.
       tileRequest.current?.abort();
+      const live = !config.useMock;
+      const point = live && !exact ? snapToRegion(clicked) : clicked;
       lastPoint.current = point;
       if (!isInConusBounds(point.lat, point.long)) {
+        setSelectedBounds(null);
         setSelection({ kind: "outside" });
         return;
       }
+      // Mock tiles come from a fixed 50 km grid; their box is known once loaded.
+      setSelectedBounds(live ? regionBounds(point) : null);
       const controller = new AbortController();
       tileRequest.current = controller;
       setSelection({ kind: "loading" });
@@ -76,7 +90,7 @@ export function App({ config }: { config: AppConfig }) {
         setSelection({ kind: "error", message: errorMessage(error) });
       }
     },
-    [fetchTile],
+    [fetchTile, config.useMock],
   );
 
   const loadPreview = useCallback(
@@ -101,6 +115,7 @@ export function App({ config }: { config: AppConfig }) {
       tileRequest.current?.abort();
       previewRequest.current?.abort();
       lastPoint.current = null;
+      setSelectedBounds(null);
       setSelection({ kind: "idle" });
       const next = fips === null ? null : (states.find((s) => s.properties.fips === fips) ?? null);
       openFips.current = next?.properties.fips ?? null;
@@ -124,7 +139,7 @@ export function App({ config }: { config: AppConfig }) {
       const { pathname, hash, search } = window.location;
       window.history.replaceState(null, "", `${pathname}${modeToSearch(next, search)}${hash}`);
       if (openFips.current) void loadPreview(openFips.current);
-      if (lastPoint.current) void select(lastPoint.current);
+      if (lastPoint.current) void select(lastPoint.current, true);
     },
     [loadPreview, select, config.useMock],
   );
@@ -170,8 +185,44 @@ export function App({ config }: { config: AppConfig }) {
     }
   }, [config.useMock]);
 
+  // Confirmed fires, the places with a spread prediction to show (live only).
+  const [fires, setFires] = useState<FireList>({ kind: "loading" });
+  const [fireAttempt, setFireAttempt] = useState(0);
+  useEffect(() => {
+    if (config.useMock) return;
+    const controller = new AbortController();
+    setFires({ kind: "loading" });
+    createActiveFireFetcher(config.orchestratorUrl)(controller.signal)
+      .then((found) => {
+        if (controller.signal.aborted) return;
+        setFires({
+          kind: "loaded",
+          // Fires over the border or offshore have no state to open.
+          fires: found.flatMap((fire) => {
+            const home = stateAt(states, fire.latitude, fire.longitude);
+            return home ? [{ ...fire, stateName: home.properties.name }] : [];
+          }),
+        });
+      })
+      .catch((error: unknown) => {
+        if (!controller.signal.aborted) setFires({ kind: "error", message: errorMessage(error) });
+      });
+    return () => controller.abort();
+  }, [config, states, fireAttempt]);
+
+  /** Opens the fire's state and the region centred on the fire. */
+  const openFire = useCallback(
+    (fire: ActiveFire) => {
+      const home = stateAt(states, fire.latitude, fire.longitude);
+      if (!home) return;
+      void openState(home.properties.fips);
+      void select({ lat: fire.latitude, long: fire.longitude }, true);
+    },
+    [openState, select, states],
+  );
+
   const retryTile = useCallback(() => {
-    if (lastPoint.current) void select(lastPoint.current);
+    if (lastPoint.current) void select(lastPoint.current, true);
   }, [select]);
 
   useEffect(() => {
@@ -205,6 +256,9 @@ export function App({ config }: { config: AppConfig }) {
         selectedState={state}
         preview={state && preview.kind === "loaded" ? preview.preview : null}
         tile={tile}
+        selectedBounds={selection.kind === "idle" ? null : selectedBounds}
+        tileLoading={selection.kind === "loading"}
+        snapToGrid={!config.useMock}
         mode={mode}
         showSpread={showSpread}
         userLocation={userLocation}
@@ -249,6 +303,9 @@ export function App({ config }: { config: AppConfig }) {
             Hover over a state to highlight it, then click or zoom in to open its fire
             preview.
           </p>
+        )}
+        {!config.useMock && (
+          <ActiveFires list={fires} onOpen={openFire} onRetry={() => setFireAttempt((n) => n + 1)} />
         )}
         <LocationControl status={locationStatus} onLocate={() => void locateUser(false)} />
         <Legend

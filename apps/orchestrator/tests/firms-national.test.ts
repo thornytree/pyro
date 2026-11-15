@@ -26,3 +26,12 @@ test("fetches all five feeds nationwide and keeps only detections inside the til
   assert.equal(landsat?.tile_id, "r24c07");
 });
 
+
+test("accepts Landsat medium confidence instead of failing the whole poll", async (t) => {
+  t.mock.method(globalThis, "fetch", async (url: string) => new Response(url.includes("/LANDSAT_NRT/")
+    ? "latitude,longitude,scan,track,acq_date,acq_time,satellite,instrument,confidence,daynight\n44.35,-71.05,4164,4962,2026-11-14,1525,L9,OLI-2,M,D\n"
+    : `${header}\n`));
+  const result = await fetchFirmsNationwide({ mapKey: "test-key", days: 2 });
+  assert.equal(result.detections.length, 1);
+  assert.deepEqual(result.detections[0].confidence, { kind: "category", value: "nominal" });
+});

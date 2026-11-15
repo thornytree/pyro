@@ -18,8 +18,9 @@ import { MapHud } from "../components/MapHud";
 import type { TerrainConfig } from "../config";
 import { ageHours } from "../lib/age";
 import { CONUS_BOUNDS } from "../lib/conus";
-import { geometryBounds, maskOutside, scaleGeometry } from "../lib/geo";
+import { type Bounds, geometryBounds, maskOutside, scaleGeometry } from "../lib/geo";
 import { type MapMode, referenceTime } from "../lib/mode";
+import { regionBounds, snapToRegion } from "../lib/region";
 import { metresPerPixel } from "../lib/scale";
 import { spreadArrow } from "../lib/spread";
 import { stateAt as stateContaining, type StateFeature } from "../lib/states";
@@ -29,6 +30,7 @@ import {
   CELLS_FILL_LAYER,
   CELLS_SOURCE,
   DETECTIONS_SOURCE,
+  HOVER_REGION_SOURCE,
   LAYERS,
   LIFT_MS,
   LIFT_SCALE,
@@ -62,13 +64,12 @@ setWorkerUrl(workerUrl);
 const EMPTY: FeatureCollection = { type: "FeatureCollection", features: [] };
 const TILE_SOURCES = [
   CELLS_SOURCE,
-  TILE_SOURCE,
   DETECTIONS_SOURCE,
   SPREAD_SOURCE,
   SPREAD_ARROW_SOURCE,
   PERIMETER_SOURCE,
 ];
-const DATA_SOURCES = [...TILE_SOURCES, PREVIEW_SOURCE];
+const DATA_SOURCES = [...TILE_SOURCES, TILE_SOURCE, HOVER_REGION_SOURCE, PREVIEW_SOURCE];
 const NATIONAL_PADDING = 24;
 const STATE_MAX_ZOOM = 8;
 const TILE_MAX_ZOOM = 9;
@@ -89,6 +90,11 @@ interface Props {
   selectedState: StateFeature | null;
   preview: StatePreview | null;
   tile: TileResponse | null;
+  /** Box of the tile being loaded or shown; drawn as soon as it is clicked. */
+  selectedBounds: Bounds | null;
+  tileLoading: boolean;
+  /** Clicks snap to the region grid: outline the tile under the cursor. */
+  snapToGrid: boolean;
   /** The mode `tile` was loaded in; sets the time detections are aged from. */
   mode: MapMode;
   /** Draw the predicted spread outlines (live tiles only). */
@@ -99,13 +105,16 @@ interface Props {
   onSelectPoint: (point: LatLong) => void;
 }
 
-function rectangle([west, south, east, north]: number[]): FeatureCollection {
+function rectangle(
+  [west, south, east, north]: number[],
+  properties: Record<string, unknown> = {},
+): FeatureCollection {
   return {
     type: "FeatureCollection",
     features: [
       {
         type: "Feature",
-        properties: {},
+        properties,
         geometry: {
           type: "Polygon",
           coordinates: [
@@ -179,6 +188,9 @@ export function MapView({
   selectedState,
   preview,
   tile,
+  selectedBounds,
+  tileLoading,
+  snapToGrid,
   mode,
   showSpread,
   userLocation,
@@ -192,8 +204,8 @@ export function MapView({
   const [metresPerPx, setMetresPerPx] = useState<number | null>(null);
 
   // Handlers are bound once; they read the latest props through refs.
-  const latest = useRef({ states, selectedState, onSelectState, onClearState, onSelectPoint });
-  latest.current = { states, selectedState, onSelectState, onClearState, onSelectPoint };
+  const latest = useRef({ states, selectedState, snapToGrid, onSelectState, onClearState, onSelectPoint });
+  latest.current = { states, selectedState, snapToGrid, onSelectState, onClearState, onSelectPoint };
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -269,6 +281,15 @@ export function MapView({
       if (id !== null) map.setFeatureState({ source: PREVIEW_SOURCE, id }, { hover: true });
     };
 
+    // Live: outline the grid tile under the cursor, the one a click loads.
+    let hoveredRegion: string | null = null;
+    const setHoveredRegion = (bounds: Bounds | null) => {
+      const key = bounds ? bounds.join(",") : null;
+      if (key === hoveredRegion) return;
+      hoveredRegion = key;
+      map.getSource<GeoJSONSource>(HOVER_REGION_SOURCE)?.setData(bounds ? rectangle(bounds) : EMPTY);
+    };
+
     const stateAt = (event: MapMouseEvent) =>
       map.queryRenderedFeatures(event.point, { layers: [STATES_FILL_LAYER] })[0];
 
@@ -304,12 +325,18 @@ export function MapView({
         ? map.queryRenderedFeatures(event.point, { layers: [PREVIEW_FILL_LAYER] })[0]
         : undefined;
       setHoveredTile(typeof previewTile?.id === "string" ? previewTile.id : null);
+      setHoveredRegion(
+        inSelected && latest.current.snapToGrid
+          ? regionBounds(snapToRegion({ lat: event.lngLat.lat, long: event.lngLat.lng }))
+          : null,
+      );
       map.getCanvas().style.cursor = stateId === null ? "" : "pointer";
     });
 
     map.on("mouseout", () => {
       setHoveredState(null);
       setHoveredTile(null);
+      setHoveredRegion(null);
       map.getCanvas().style.cursor = "";
     });
 
@@ -430,7 +457,6 @@ export function MapView({
     }
     const now = referenceTime(mode, new Date());
     set(CELLS_SOURCE, tile.cells);
-    set(TILE_SOURCE, rectangle(tile.bounds));
     set(SPREAD_SOURCE, tile.spread ?? EMPTY);
     set(SPREAD_ARROW_SOURCE, tile.spread ? spreadArrow(tile.spread) : EMPTY);
     set(PERIMETER_SOURCE, tile.perimeters ?? EMPTY);
@@ -451,6 +477,15 @@ export function MapView({
       AUTO,
     );
   }, [tile, mode, ready]);
+
+  // The selected tile is outlined from the click on, not only once it has loaded.
+  useEffect(() => {
+    if (!ready) return;
+    const bounds = tile?.bounds ?? selectedBounds;
+    mapRef.current
+      ?.getSource<GeoJSONSource>(TILE_SOURCE)
+      ?.setData(bounds ? rectangle(bounds, { loading: tileLoading }) : EMPTY);
+  }, [tile, selectedBounds, tileLoading, ready]);
 
   useEffect(() => {
     const map = mapRef.current;

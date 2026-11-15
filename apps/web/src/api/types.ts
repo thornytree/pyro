@@ -26,6 +26,8 @@ export interface CellProperties {
   riskScore?: number;
   /** Live model only: FIRMS detections inside the cell. */
   detections?: number;
+  /** Live model only: a missing input was taken from the nearest cell that had it. */
+  filled?: boolean;
 }
 
 export interface DetectionProperties {
@@ -163,6 +165,22 @@ export type TileFetcher = (
   mode: MapMode,
   signal?: AbortSignal,
 ) => Promise<TileResponse>;
+
+// --- Active fires: GET /fires (live only). -------------------------------
+
+/** A group of confirmed detections (nominal or high confidence, last 24 h). */
+export interface ActiveFire {
+  /** Centre of the detections. */
+  latitude: number;
+  longitude: number;
+  detections: number;
+  sensors: number;
+  frpMaxMw: number | null;
+  /** ISO 8601 UTC time of the newest detection. */
+  newestAt: string;
+}
+
+export type ActiveFireFetcher = (signal?: AbortSignal) => Promise<ActiveFire[]>;
 
 // --- State preview: Express currently returns an empty collection. -------
 

@@ -43,6 +43,15 @@ function Summary({
 }) {
   const summary = summarizePreview(preview);
   const pending = summary.tileCount - summary.readyCount;
+  if (summary.tileCount === 0) {
+    // Live: the models run per tile on request, so there is nothing statewide to summarise.
+    return (
+      <p className="hint">
+        Move over the state to outline a tile, then click to run both models for it.
+        Each tile is about 17 miles (28 km) across.
+      </p>
+    );
+  }
   return (
     <>
       <dl>
@@ -69,9 +78,7 @@ function Summary({
         </button>
       )}
       <p className="hint">
-        {summary.tileCount === 0
-          ? "No statewide model output is available yet. Click an area to load its source data."
-          : "Each square summarizes model output for a tile. Click an area to load the surrounding region."}
+        Each square summarizes model output for a tile. Click an area to load the surrounding region.
       </p>
     </>
   );
