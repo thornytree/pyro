@@ -36,9 +36,9 @@ Training should use the same features the orchestrator builds at serve time. How
 | `inference/sources/weather/` | 2. Weather | Live: orchestrator (NOAA RRFS via Open-Meteo). Historical weather for training: not started. |
 | `inference/sources/topography/` | 2. Terrain and fuels | Live: orchestrator (3DEP, LANDFIRE). Historical fuel vintages for training: not started. |
 | `inference/sources/daymet/` | 2. Daymet | Retrieval in the orchestrator. Use in training: not started. |
-| `inference/harmonization/` | 2. Training bundles and features | Not started. |
-| `inference/model/training/` | 3. Training | Not started. Needs labels (NIFC / WFIGS, unverified). |
-| `inference/model/inference/` | 3. Inference service | Not started. |
+| `inference/harmonization/` | 2. Training bundles and features | Compiled training table and live bundle features done. |
+| `inference/model/training/` | 3. Training | Occurrence and spread models trained (`docs/handover/models.md`). Latent-state model still needs labels (NIFC / WFIGS, unverified). |
+| `inference/model/inference/` | 3. Inference service | `POST /predict` and `POST /spread` written; not yet called by the orchestrator. |
 | `inference/shared/` | Schemas and grid | FIRMS schema and 50 km grid done. `dataBundle` schema not mirrored in Python yet. |
 | `web/` | Map site | Built; mock and observed-data modes work. Waits on model output. |
 

@@ -1,6 +1,6 @@
 # model/training
 
-Status (2026-11-15): not started.
+Status (2026-11-15): `train_occurrence.py` and `train_spread.py` write artifacts and metrics to `data/models`. See `docs/handover/models.md`. The points below describe the agreed latent-state model, which is still not trainable.
 
 - **Input:** historical bundles (see `../../harmonization/README.md`) plus outcome labels from NIFC / WFIGS.
 - **Output:** a versioned model artifact for `inference/`, stored outside git.

@@ -9,4 +9,4 @@ Target outputs: burn probability with uncertainty first (decision 3). Spread dir
 
 Structure: `docs/handover/model-outline.md` (latent fire state with per-sensor likelihoods, agreed 2026-11-14).
 
-Status (2026-11-15): not started. See `../README.md` for the order of work.
+Status (2026-11-15): two models trained and served. Model 1 (occurrence) is the prior term of the agreed structure; model 2 (spread) is a FIRMS-calibrated simulation on the 1 km grid. Results, limits and commands: `docs/handover/models.md`.

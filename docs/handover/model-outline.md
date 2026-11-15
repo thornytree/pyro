@@ -1,6 +1,6 @@
 # Model outline
 
-Status: structure agreed on 2026-11-14 (latent fire state with per-sensor likelihoods). The model itself is not implemented; the harmonized FIRMS training data is ready (see `firms-harmonization.md`).
+Status: structure agreed on 2026-11-14 (latent fire state with per-sensor likelihoods). The latent-state model is not implemented; its prior term and a spread model were built on 2026-11-15 (see `models.md`); the harmonized FIRMS training data is ready (see `firms-harmonization.md`).
 
 ## Idea
 

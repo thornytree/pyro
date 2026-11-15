@@ -1,6 +1,6 @@
 # model/inference
 
-Status (2026-11-15): not started.
+Status (2026-11-15): `occurrence.py` (`POST /predict`) and `spread.py` (`POST /spread`) take the bundle and return GeoJSON as proposed below, plus `riskScore` per cell. The orchestrator side is not built. See `docs/handover/models.md`.
 
 - **Input:** the `dataBundle` the orchestrator builds in `GET /tiles` (see `apps/orchestrator/src/fan-out/types.ts`), plus the model artifact from `training/`.
 - **Exposed as:** a FastAPI route called by `apps/orchestrator` after fan-out.

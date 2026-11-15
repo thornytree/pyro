@@ -9,9 +9,9 @@ Python: model training and inference, exposed over HTTP with FastAPI. Only `apps
 | `sources/firms/` | Done: FIRMS archive normalizer and loader (`archive.py`, `normalize.py`). |
 | `shared/` | Done: unified FIRMS schema, 50 km EPSG:5070 tile grid. |
 | `sources/{weather,topography,daymet}/` | No Python code. Live retrieval lives in `apps/orchestrator/src/fan-out/`; these READMEs point there. |
-| `harmonization/` | Training side done: FIRMS per cell-day, sample, and the compiled train / validation / test table (`compile_dataset.py`; see `docs/handover/compiled-dataset.md`). Features from a live bundle: not started. |
-| `model/training/`, `model/inference/` | Not started. |
-| FastAPI app | Not started. `fastapi` and `uvicorn` are dependencies, but there is no app module or route. |
+| `harmonization/` | Training side done: FIRMS per cell-day, sample, and the compiled train / validation / test table (`compile_dataset.py`; see `docs/handover/compiled-dataset.md`). Features from a live bundle: `bundle_features.py`, not yet checked against a real `GET /tiles` response. |
+| `model/training/`, `model/inference/` | Two models trained and served: occurrence (`POST /predict`) and spread (`POST /spread`). See `docs/handover/models.md`. |
+| FastAPI app | `app.py`: `GET /health`, `POST /predict`, `POST /spread`. Written but not yet run; the orchestrator does not call it. Start with `uv run uvicorn app:app --port 8000`. |
 
 The orchestrator now fetches and normalizes every source itself and reports `inference: "not_connected"` in `/health`. This service's job is to take that normalized `dataBundle` and return model output.
 

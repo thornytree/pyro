@@ -9,6 +9,8 @@ dependencies = [
     "pandas>=2.2",
     "pyarrow>=17",
     "truststore>=0.10",
+    "scikit-learn>=1.6",
+    "joblib>=1.4",
 ]
 
 [dependency-groups]
