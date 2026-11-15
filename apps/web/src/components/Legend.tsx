@@ -50,10 +50,12 @@ export function Legend({
   terrain,
   overlay,
   historical,
+  relativeScore = false,
 }: {
   terrain: boolean;
   overlay: LegendOverlay;
   historical: boolean;
+  relativeScore?: boolean;
 }) {
   const gradient = PROBABILITY_STOPS.map(
     ([stop, colour]) => `${colour} ${stop * 100}%`,
@@ -61,23 +63,22 @@ export function Legend({
   return (
     <div className="legend">
       <div className="legend-title">
-        Fire probability{historical && " (hindcast for the chosen day)"}
+        {relativeScore ? "Daily fire-detection score" : "Fire probability"}{historical && " (hindcast for the chosen day)"}
       </div>
       <div
         className="legend-bar"
         style={{ background: `linear-gradient(to right, ${gradient})` }}
       />
       <div className="legend-scale">
-        <span>0%</span>
-        <span>100%</span>
+        <span>{relativeScore ? "0" : "0%"}</span>
+        <span>{relativeScore ? "100" : "100%"}</span>
       </div>
       <div className="legend-nodata">
         <span className="swatch" style={{ background: NO_DATA_COLOUR }} /> No model
         output yet
       </div>
       <p className="hint">
-        Fainter cells are less certain. Dots are satellite detections; they fade
-        with age.
+        {relativeScore ? "Fainter cells indicate greater model disagreement." : "Fainter cells are less certain."} Dots are satellite detections; they fade with age.
       </p>
       {overlay && <OverlayLegend overlay={overlay} />}
       {terrain && <ElevationLegend />}

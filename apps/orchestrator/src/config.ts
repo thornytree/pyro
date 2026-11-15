@@ -8,6 +8,7 @@ export type ServerConfig = {
   port: number;
   webOrigin: string;
   defaults: FanOutOptions;
+  inference?: { url: string; timeoutMs: number };
 };
 
 export function loadEnvironment(): void {
@@ -53,10 +54,22 @@ export function readConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
   } catch {
     throw new Error("WEB_ORIGIN must be an HTTP(S) origin, such as http://localhost:5173.");
   }
+  let inference: ServerConfig["inference"];
+  if (env.INFERENCE_URL?.trim()) {
+    let url: URL;
+    try { url = new URL(env.INFERENCE_URL.trim()); }
+    catch { throw new Error("INFERENCE_URL must be an HTTP(S) base URL."); }
+    if (!["http:", "https:"].includes(url.protocol) || url.username || url.password || url.search || url.hash) {
+      throw new Error("INFERENCE_URL must be an HTTP(S) base URL without credentials or query parameters.");
+    }
+    const timeoutMs = Number(env.INFERENCE_TIMEOUT_MS ?? 15000);
+    if (!Number.isInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 120000) throw new Error("INFERENCE_TIMEOUT_MS must be between 1 and 120000.");
+    inference = { url: url.toString().replace(/\/+$/, ""), timeoutMs };
+  }
   const host = (env.HOST ?? "127.0.0.1").trim();
   if (!host) throw new Error("HOST cannot be empty.");
   return {
-    host, port, webOrigin,
+    host, port, webOrigin, inference,
     defaults: { forecastHours, landfireVersion: version as LandfireVersion, daymet: { startDate, endDate } },
   };
 }

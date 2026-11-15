@@ -1,12 +1,20 @@
-# model
+# Model
 
-Work item 3: training and inference.
+The first supervised baseline is trained and exposed through FastAPI. It uses
+five bootstrap gradient-boosted classifiers selected using the supplied temporal
+validation split, with 18 location/season/weather features shared by training and
+serving. Test ROC-AUC is 0.758 on 1,609 held-out cell-days.
 
-- `training/`: fits the model on historical bundles paired with historical fire outcomes.
-- `inference/`: runs the fitted model on the live bundle the orchestrator sends.
+It predicts a relative daily FIRMS-detection score on native 10 km cells, repeated
+on the frontend's finer display grid. It is not calibrated burn probability or a
+spread model. The planned latent-sensor Pyro model remains future work.
 
-Target outputs: burn probability with uncertainty first (decision 3). Spread direction, rate and perimeter later; the web app already has an experimental spread display driven by a mock formula.
+- `features.py`: serving-compatible feature definitions and native-grid mapping.
+- `schema.py`: consumed input schema and grid/time validation.
+- `training/train.py`: reproducible fitting, selection, held-out evaluation.
+- `training/report.json`: versioned metrics, inputs, data hashes and limitations.
+- `inference/predict.py`: artifact loading and GeoJSON output.
+- `../app.py`: FastAPI `/health` and `POST /predict`.
+- `artifacts/baseline.joblib`: local trained ensemble; ignored by Git.
 
-Structure: `docs/handover/model-outline.md` (latent fire state with per-sensor likelihoods, agreed 2026-11-14).
-
-Status (2026-11-15): not started. See `../README.md` for the order of work.
+See [service instructions](../README.md) for commands, API semantics and limits.

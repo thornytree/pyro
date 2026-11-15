@@ -4,7 +4,7 @@ The website: interactive US heat map of current and predicted wildfires.
 
 - Sends `lat`, `long` to `apps/orchestrator` (`GET /tiles`). Base URL comes from `VITE_ORCHESTRATOR_URL`.
 - Will render model output from `apps/inference`, relayed by the orchestrator. Until that exists:
-  - **Against the orchestrator** (`VITE_USE_MOCK=false`): a tile shows real FIRMS detections and the panel says source data loaded, with no probability cells. The state preview is empty. Historical replay is disabled because `/history` routes are not implemented. The panel shows source data for the clicked region and offers its JSON download.
+  - **Against the orchestrator** (`VITE_USE_MOCK=false`): a tile shows real FIRMS detections and, when the Python baseline responds, a daily detection-score heat map. Model failures retain source observations. The state preview is empty. Historical replay serves sparse held-out cell-days from the Python archive. Use “Open archived fire-detection example” to open an available date/location. The panel shows source data for the clicked region and offers its JSON download.
   - **Mock** (`VITE_USE_MOCK=true`): every feature works on generated data, including cells, spread and historical mode.
 
 ## Run
@@ -72,19 +72,21 @@ Mode logic (URL parsing, date range, the reference time detections are aged from
 | Field | Type | Note |
 |---|---|---|
 | `tileId` | string | Opaque region ID; live requests cover 300 square miles centered on the point. |
-| `status` | `"observed"`, `"ready"` or `"queued"` | Live Express currently returns `observed`: real source data with no model output or queued task. |
+| `status` | `"observed"`, `"ready"` or `"queued"` | Express returns `ready` after validated Python inference, otherwise `observed` source data. No scheduler task is implied. |
 | `bounds` | `[west, south, east, north]` | Degrees. |
 | `updatedAt` | ISO 8601 string or null | When the model output was produced. |
 | `cells` | GeoJSON FeatureCollection of Polygons | Properties: `probability` (0 to 1), `uncertainty` (0 to 1). |
 | `detections` | GeoJSON FeatureCollection of Points | Properties: `source`, `acquiredAt` (ISO 8601 UTC), `confidence` (0 to 1 or null), `frpMw` (number or null). |
+| `prediction` | object, optional | Model version, `scoreKind`, target, exact forecast window, horizon, native resolution and uncertainty definition. The current model uses sample-relative detection scores. |
+| `inference` | object, optional | `status`: `ready`, `not_configured` or `unavailable`, plus a safe fallback message when unavailable. |
 | `spread` | GeoJSON FeatureCollection of Polygons, optional | Live only; empty when no cell is extreme. One feature per horizon. Properties: `horizonHours`, `confidence` (0 to 1), `origin` ([long, lat] where spread starts), `headingDeg` (clockwise from north), `rateKmh`, `headKm` (distance past `origin`). |
 | `drivers` | object or null, optional | Live only. Weather behind the spread: `observedAt`, `temperatureC`, `relativeHumidityPct`, `windSpeedKmh` (10 m), `windFromDeg`. |
-| `bundle` | `dataBundle`, required for `observed` | Full normalized source data for the selected point and 300-square-mile region. Type-only reference to the orchestrator schema; not generated mock data. |
+| `bundle` | `dataBundle`, present for real responses | Full normalized source data for the selected point and 300-square-mile region. Type-only reference to the orchestrator schema; not generated mock data. |
 | `perimeters` | GeoJSON FeatureCollection of Polygons, optional | Historical only; empty where no perimeter data exists. Properties: `fireName`, `date` (YYYY-MM-DD), `source`, `areaKm2`. |
 
 Geometry is GeoJSON in EPSG:4326 so the web app does not depend on the model grid's cell size or projection. A non-2xx status is shown as an error. The exact types are in `src/api/types.ts`.
 
-Proposed historical route (not implemented by Express): `GET {VITE_ORCHESTRATOR_URL}/history/tiles?lat=&long=&date=YYYY-MM-DD` would return the same shape for that UTC day, with `perimeters` instead of `spread` and `drivers`. It is a separate route so the orchestrator can serve it read-only from the archive and never activate a tile.
+Implemented historical route: `GET {VITE_ORCHESTRATOR_URL}/history/tiles?lat=&long=&date=YYYY-MM-DD` would return the same shape for that UTC day, with `perimeters` instead of `spread` and `drivers`. It is a separate route so the orchestrator can serve it read-only from the archive and never activate a tile.
 
 `GET {VITE_ORCHESTRATOR_URL}/states/{fips}/preview` (two-digit state FIPS code, e.g. `06`) returns:
 
@@ -94,7 +96,7 @@ Proposed historical route (not implemented by Express): `GET {VITE_ORCHESTRATOR_
 | `updatedAt` | ISO 8601 string or null | Newest model output among the tiles. |
 | `tiles` | GeoJSON FeatureCollection of Polygons | One feature per 50 km tile overlapping the state. Properties: `tileId` (same ID as `GET /tiles`), `peakProbability` (0 to 1, or null if the tile has no output yet), `meanUncertainty` (0 to 1 or null). |
 
-Tiles with `null` values are drawn grey ("no model output yet"). The preview is read-only: it must not activate tiles. The proposed `GET /history/states/{fips}/preview?date=YYYY-MM-DD` would return the same shape for a past day. It is not implemented yet.
+Tiles with `null` values are drawn grey ("no model output yet"). The preview is read-only: it must not activate tiles. The proposed `GET /history/states/{fips}/preview?date=YYYY-MM-DD` would return the same shape for a past day. It currently returns an empty preview.
 
 ## Caveats
 
@@ -103,8 +105,8 @@ Tiles with `null` values are drawn grey ("no model output yet"). The preview is 
 - **State outlines are bundled** from `us-atlas` (Census Bureau 1:10m, about 110 kB). States are matched by FIPS code; Alaska, Hawaii and territories are left out (decision 7).
 - **The mock preview is built in the browser** from the same generated tiles as `GET /tiles`, so its numbers match the full tile. Texas takes about 30 ms.
 - **Mock tiles are not the real grid.** The mock snaps to a 0.5 degree lat/long grid with 50 x 50 cells (about 1 km) and IDs like `mock-79_-223`. Live requests use centered 300-square-mile regions, as requested for the current prototype.
-- **Inference is pending.** Express serves `GET /tiles` with real detections and the normalized source bundle. Prediction cells remain empty and `updatedAt` is null. State previews remain empty until statewide model results exist.
-- **Historical routes and spread are not on Express yet.** `GET /history/tiles` and `GET /history/states/{fips}/preview` return 404 from the current orchestrator, and its `GET /tiles` has no `spread` or `drivers`. With `VITE_USE_MOCK=false`, historical mode is disabled, historical URL parameters are removed, and the map stays in live observations mode. Live results show detections, source summaries and a JSON download. Use `VITE_USE_MOCK=true` to see both modes.
+- **First model is experimental.** Express relays a trained daily FIRMS-detection baseline. Its sample-relative scores are not calibrated burn probabilities; native model cells are 10 km even though the display grid is finer. The UI labels the score accordingly. Statewide previews remain empty.
+- **Historical coverage is sparse.** Real replay uses held-out sampled cell-days and retrospective weather. It returns scores and full-cell detection counts, with empty exact-hotspot and perimeter layers. Missing area/date samples return a clear error. Spread remains mock-only.
 - **The CONUS check is a bounding box** (`src/lib/conus.ts`). It accepts parts of Canada, Mexico and ocean. The orchestrator must do the real validation.
 - **Basemap not verified end to end.** The overlay was tested against a blank local style because the build sandbox could not reach OpenFreeMap. Confirm the example style URL loads, and read OpenFreeMap's terms before a public launch.
 - **Terrain not verified with the real basemap.** Checked in a headless browser against a blank style, so contour labels (which borrow the basemap's font and glyphs) were not seen. Confirm they render with OpenFreeMap. The elevation credit is in the panel footer, not MapLibre's attribution control; check the DEM provider's terms before a public launch.
@@ -161,7 +163,7 @@ the complete normalized bundle for the region. The historical date range is cont
 inside a live request, not the historical replay mode. The frontend currently uses
 `DEFAULT_FORECAST_HOURS`, `DAYMET_START_DATE`, `DAYMET_END_DATE` and `LANDFIRE_VERSION`
 from the backend environment; there are no new mandatory query parameters or UI
-settings. Predictions remain empty until inference is implemented.
+settings. Prediction cells are present only when the model returns a validated response.
 
 Error responses retain `{error: {code, message, source?, reason?, upstreamStatus?}}`.
 The API client now shows the safe backend message and preserves its code/source,
@@ -169,10 +171,7 @@ instead of displaying only an HTTP number. State-preview responses must match th
 requested state FIPS code. A previous point/mode request is still aborted when a
 new selection is made, so older responses do not replace the active selection.
 
-Historical replay, hindcasts and spread simulations remain available in **mock
-mode**. With the real API, the historical button is disabled and historical shared
-URLs normalize to live mode; they never silently show current detections as past
-observations. The proposed history routes are retained for future integration.
+Historical replay is connected to the real local archive. Spread simulations remain available in **mock mode**. Historical shared URLs preserve their date and use the archive routes; current detections are never presented as past observations.
 
 Vite uses `strictPort` on 5173 so it does not silently switch ports and break the
 backend's `WEB_ORIGIN=http://localhost:5173` CORS setting. Set `VITE_USE_MOCK=false`
@@ -190,3 +189,32 @@ source-specific Open-Meteo connection-timeout error. A successful all-provider
 response could not be re-verified during this contract audit; the local HTTP
 contract tests pass with provider retrieval stubbed. This is separate from map
 rendering, which was not re-tested in a browser in this audit.
+
+## Daily detection baseline
+
+The first connected model returns `prediction.scoreKind = "sample_relative"` and
+`nativeResolutionKm = 10`. The map's legacy `probability` property contains the
+mean score of five bootstrap members, not a calibrated wildfire probability.
+The legend/panel use "daily fire-detection score" and identify experimental 24h
+output. Finer display polygons repeat native 10 km scores. Opacity uses twice the
+ensemble score standard deviation; the UI describes it as model disagreement.
+No spread arrows, speed, future perimeter or threshold-based spread statement is
+fabricated for this model. Mock spread behavior is retained separately.
+
+`status: "ready"` includes `prediction` and populated cells after backend validation.
+When inference is unavailable, the existing `observed` view remains with source
+data and a model-unavailable note. The selected-area bundle is still checked for
+real live responses, including those marked ready. Historical mode uses sparse archived samples
+against the real backend. See `apps/inference/README.md` and its training report
+for held-out metrics and limitations.
+
+## Local archive demo
+
+Click **Open archived fire-detection example**. The app opens a held-out test
+cell-day, selects its state and date, and displays real model scores computed from
+archived weather. `GET /history/examples` supplies examples; `/history/tiles`
+returns native-cell polygons plus `history` provenance. Blank regions mean no
+sample, not no fire. Counts describe full native cells even at clipped edges.
+The `date` is the archive's local-solar day. This is retrospective reconstruction,
+not a forecast issued historically or a validated spread prediction. Observed
+perimeters and exact hotspot positions are not present in this local archive.

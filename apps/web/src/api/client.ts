@@ -31,7 +31,7 @@ function isTileResponse(value: unknown, point: LatLong): value is TileResponse {
     v.bounds.every((n) => typeof n === "number" && Number.isFinite(n)) &&
     validBounds(v.bounds as number[], point) &&
     (v.updatedAt === null || typeof v.updatedAt === "string") &&
-    (v.status !== "observed" || validObservedBundle(v.bundle, point, v.bounds as number[])) &&
+    ((v.status !== "observed" && v.bundle === undefined) || validObservedBundle(v.bundle, point, v.bounds as number[])) &&
     isFeatureCollection(v.cells) &&
     isFeatureCollection(v.detections) &&
     (v.spread === undefined || isFeatureCollection(v.spread)) &&

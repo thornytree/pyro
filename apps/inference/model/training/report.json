@@ -1,0 +1,128 @@
+{
+  "model_version": "daily-detection-v1-3716cd27-hgb15",
+  "created_at": "2026-11-15T07:48:18.528514+00:00",
+  "target": "any_firms_detection_in_10km_cell_day",
+  "score_kind": "sample_relative",
+  "native_resolution_km": 10,
+  "forecast_window_hours": 24,
+  "features": [
+    "latitude",
+    "longitude",
+    "doy_sin",
+    "doy_cos",
+    "om_elevation",
+    "om_temp_max",
+    "om_temp_min",
+    "om_temp_mean",
+    "om_rh_min",
+    "om_rh_mean",
+    "om_vpd_max",
+    "om_vpd_mean",
+    "om_precip_sum",
+    "om_wind_max",
+    "om_wind_mean",
+    "om_gust_max",
+    "om_wind_from_sin",
+    "om_wind_from_cos"
+  ],
+  "seed": 20261114,
+  "ensemble_members": 5,
+  "selection": "highest validation average precision; test unused until final evaluation",
+  "selected_family": "hgb15",
+  "validation_candidates": {
+    "logistic": {
+      "rows": 1617,
+      "positive_fraction": 0.49907235621521334,
+      "roc_auc": 0.7369865528477673,
+      "average_precision": 0.6959928611104567,
+      "brier": 0.2069944877746036,
+      "log_loss": 0.6022517278589005,
+      "f1": 0.7027972027972028
+    },
+    "hgb7": {
+      "rows": 1617,
+      "positive_fraction": 0.49907235621521334,
+      "roc_auc": 0.7591980663025686,
+      "average_precision": 0.7293990147308386,
+      "brier": 0.1997730722000192,
+      "log_loss": 0.5845170448459892,
+      "f1": 0.698159509202454
+    },
+    "hgb15": {
+      "rows": 1617,
+      "positive_fraction": 0.49907235621521334,
+      "roc_auc": 0.7628574051126715,
+      "average_precision": 0.7312052492858018,
+      "brier": 0.19930109686902864,
+      "log_loss": 0.5851856233901197,
+      "f1": 0.6999383857054837
+    }
+  },
+  "threshold": 0.36,
+  "data_sha256": {
+    "train": "3716cd276289193319b35e927bd2fe7583ad1397fedceb7686e59c1a42d7abba",
+    "validation": "c71202f5d49674d7281acdca5550f09a927074212e3c2fdef7af7ca04c363d35",
+    "test": "82cd1d51d0dc54e529c4602091efbc0d82710f590940e6fcf824f916fee4c822"
+  },
+  "dates": {
+    "train": {
+      "first": "2000-11-09",
+      "last": "2022-03-06"
+    },
+    "validation": {
+      "first": "2022-03-07",
+      "last": "2024-03-30"
+    },
+    "test": {
+      "first": "2024-03-31",
+      "last": "2025-12-31"
+    }
+  },
+  "metrics": {
+    "train": {
+      "rows": 4845,
+      "positive_fraction": 0.500515995872033,
+      "roc_auc": 0.8918735622390729,
+      "average_precision": 0.8855160919910741,
+      "brier": 0.13806081019148328,
+      "log_loss": 0.4330675892096371,
+      "f1": 0.8143497757847533
+    },
+    "validation": {
+      "rows": 1617,
+      "positive_fraction": 0.49907235621521334,
+      "roc_auc": 0.7628574051126715,
+      "average_precision": 0.7312052492858018,
+      "brier": 0.19930109686902864,
+      "log_loss": 0.5851856233901197,
+      "f1": 0.7361633530360021
+    },
+    "test": {
+      "rows": 1609,
+      "positive_fraction": 0.5090118085767558,
+      "roc_auc": 0.7578167261711565,
+      "average_precision": 0.7587000668981205,
+      "brier": 0.201232256187869,
+      "log_loss": 0.5923538193310116,
+      "f1": 0.7214323328067404
+    }
+  },
+  "test_constant_baseline": {
+    "rows": 1609,
+    "positive_fraction": 0.5090118085767558,
+    "roc_auc": 0.5,
+    "average_precision": 0.5090118085767558,
+    "brier": 0.24999096613968963,
+    "log_loss": 0.693129112833005,
+    "f1": 0.6746293245469522
+  },
+  "limitations": [
+    "FIRMS detection labels are not confirmed wildfire or burned-area labels.",
+    "Balanced sampled backgrounds: scores are not calibrated population burn probabilities.",
+    "Retrospective daily weather differs from live rolling-24h RRFS forecasts.",
+    "10 km model cells are displayed on a finer grid; no added spatial skill is implied.",
+    "Partial native cells use only the weather samples within the selected region.",
+    "No spread direction, speed, perimeter or overpass-coverage model."
+  ],
+  "sklearn_version": "1.9.1"
+}

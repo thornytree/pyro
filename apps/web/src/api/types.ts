@@ -1,6 +1,7 @@
 // Live observation contract implemented by Express. Historical/model fields remain
 // optional until those backend routes exist. GeoJSON coordinates use EPSG:4326.
 import type { FeatureCollection, Point, Polygon, Position } from "geojson";
+import type { PredictionMetadata } from "../../../orchestrator/src/inference/client";
 import type { dataBundle } from "../../../orchestrator/src/fan-out/types";
 import type { MapMode } from "../lib/mode";
 
@@ -93,6 +94,9 @@ export interface TileResponse {
   updatedAt: string | null;
   /** Required for observed live responses; absent from generated mock tiles. */
   bundle?: dataBundle;
+  history?: { date: string; split: "test"; coverage: "sampled_cells_only"; weather: "retrospective_daily"; observedDetectionCount: number; message: string };
+  prediction?: PredictionMetadata;
+  inference?: { status: "ready" | "not_configured" | "unavailable"; message?: string };
   cells: CellCollection;
   detections: DetectionCollection;
   /** Live only: spread outlines around extreme-risk cells. Empty when no cell is extreme. */

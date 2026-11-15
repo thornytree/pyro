@@ -30,9 +30,11 @@ State preview validates a CONUS state FIPS code and currently returns an empty
 FeatureCollection: there are no statewide model results yet, and it starts no jobs.
 
 `/tiles` waits for all five data providers, then returns the web GeoJSON envelope
-plus the full normalized `bundle`. `status: "observed"` means observations were
-retrieved, not a forecast or queued task. `cells` is empty and `updatedAt` is null
-until Python inference is connected. Detections are real FIRMS points with lon/lat
+plus the full normalized `bundle`. With `INFERENCE_URL` configured, it POSTs this
+bundle to Python `/predict` and validates the returned grid and forecast window.
+Successful inference returns `status: "ready"`, populated `cells`, `updatedAt` and
+`prediction` metadata. Without inference, or if it fails, `status: "observed"`
+retains the source data with empty cells and null `updatedAt`. Detections are real FIRMS points with lon/lat
 GeoJSON coordinates. MODIS confidence is scaled from percent to 0–1; VIIRS keeps
 its category in `confidenceCategory` and has null numeric confidence.
 
@@ -53,10 +55,10 @@ See [source adapters](src/fan-out/README.md) for units, versions and grid semant
 
 ## Not built yet
 
-- **Inference call.** `/tiles` stops at observations: `cells` is empty, `updatedAt` is null and `/health` reports `inference: "not_connected"`. To add: an inference base URL in config, a call after fan-out with the `dataBundle`, merging the returned cells into the response with `status: "ready"`, and falling back to `observed` if inference fails or times out. The inference service and its route do not exist yet (`apps/inference/model/inference/README.md`).
+- **Validated wildfire/spread predictions.** A trained experimental daily FIRMS-detection baseline is connected. It outputs sample-relative scores, not calibrated burn probabilities, spread direction/speed or future perimeters. See `apps/inference/README.md`.
 - **State preview.** `GET /states/{fips}/preview` returns no tiles. It needs model output for many regions at once, which the request-driven design does not produce; see the statewide-preview caveat in `apps/web/README.md`.
-- **Historical routes.** `GET /history/tiles` and `GET /history/states/{fips}/preview` are not implemented. The frontend disables historical replay with the real backend and keeps it available with mocks. Historical URL parameters normalize to live mode; live Daymet context is not a replay.
-- **Spread.** The web app accepts optional `spread` and `drivers` fields; nothing produces them.
+- **Historical routes.** `GET /history/examples` lists available held-out samples. `GET /history/tiles?lat=&long=&date=YYYY-MM-DD` serves local archived cell-day scores through inference. `GET /history/states/{fips}/preview?date=YYYY-MM-DD` returns an empty preview. Missing samples return 404; unavailable archives return 503. Historical requests never call live providers.
+- **Spread.** The web app accepts optional `spread` and `drivers` fields; the daily-detection baseline does not produce them.
 - **Scheduled ingestion.** The 50 km grid and scheduler in `src/fan-out/` are not started. Whether to keep request-driven fetching (every click fetches five providers) or move to the scheduled design of decisions 2 and 11 needs a team decision; see `docs/handover/decisions.md`.
 
 ## Frontend contract alignment
@@ -71,7 +73,41 @@ The source-data download contains this same bundle. Defaults for forecast horizo
 Daymet dates and LANDFIRE version remain server-side; no frontend token is required.
 
 The API client displays safe backend diagnostic messages and preserves error
-`code` and `source`. The UI labels real results "Live observations", with no model
-probabilities, and shows Daymet dates explicitly as historical context. State
+`code` and `source`. The UI labels source-only results "Live observations" and model results
+"Experimental daily fire score". Daymet dates remain explicit historical context. State
 previews remain empty until model outputs exist. See `apps/web/README.md` for the
-implemented contract and the future historical/model fields.
+implemented live and historical contracts.
+
+## Trained model connection
+
+Local `.env` and `.env.example` now include `INFERENCE_URL=http://127.0.0.1:8000`
+and `INFERENCE_TIMEOUT_MS=15000`. Start Python using the inference README, then
+restart Express. For a remote model, change the URL. Leave `INFERENCE_URL` empty
+for observations-only operation. `/health` reports `configured` when a URL is set;
+that is not a reachability check. Python `/health` reports the loaded artifact.
+
+`src/inference/client.ts` posts the entire bundle, validates 0–1 scores, cell count,
+row-major polygon geometry and the exact 24h window. `prediction` records version,
+score kind, target, native resolution and uncertainty definition. A model timeout,
+HTTP error or malformed output produces an observation response with
+`inference: {status: "unavailable", message: "..."}` rather than losing detections.
+Successful results use `inference.status: "ready"`; no configured URL uses
+`not_configured`. This differs from required-provider failure, which remains 502.
+
+The baseline requires at least 24 hourly forecasts; requests with `forecastHours`
+below 24 fall back to observed data. Longer requests are scored for their first
+24 hours only, as identified by `prediction.windowStart` and `windowEnd`. No
+unsupported horizon is silently presented as a spread forecast. The historical
+Daymet and LANDFIRE source bundles remain intact; the first model intentionally
+uses only training-compatible weather, location and seasonal features.
+
+## Historical replay
+
+Requires the inference server and its local `training/compiled/test.csv.gz`. This
+is sparse sampled coverage, not a complete fire archive. The map draws only
+available native 10 km cells clipped to the 300-square-mile selection. `history`
+metadata states the test split, retrospective weather, and full-cell FIRMS count.
+No exact hotspot coordinates or perimeter geometry are fabricated. Cell properties
+include `observedFire` and `observedDetectionCount`; `detections` and `perimeters`
+are empty. Dates identify local-solar cell-days in the compiled archive; the
+midnight timestamps are day identifiers, not exact acquisition/forecast times.

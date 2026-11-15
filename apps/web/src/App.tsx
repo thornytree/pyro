@@ -9,7 +9,7 @@ import { TilePanel, type Selection } from "./components/TilePanel";
 import type { AppConfig } from "./config";
 import { isInConusBounds } from "./lib/conus";
 import { locate } from "./lib/geolocation";
-import { type MapMode, modeFromSearch, modeLabel, modeToSearch, sameMode, supportedMode } from "./lib/mode";
+import { type MapMode, modeFromSearch, modeLabel, modeToSearch, sameMode } from "./lib/mode";
 import { conusStates, stateAt, type StateFeature } from "./lib/states";
 import { MapView } from "./map/MapView";
 
@@ -41,7 +41,7 @@ export function App({ config }: { config: AppConfig }) {
   );
 
   const [mode, setMode] = useState<MapMode>(() =>
-    supportedMode(modeFromSearch(window.location.search, new Date()), config.useMock),
+    modeFromSearch(window.location.search, new Date()),
   );
   const [showSpread, setShowSpread] = useState(true);
   const [state, setState] = useState<StateFeature | null>(null);
@@ -117,7 +117,7 @@ export function App({ config }: { config: AppConfig }) {
    */
   const changeMode = useCallback(
     (requested: MapMode) => {
-      const next = supportedMode(requested, config.useMock);
+      const next = requested;
       if (sameMode(next, modeRef.current)) return;
       modeRef.current = next;
       setMode(next);
@@ -162,13 +162,6 @@ export function App({ config }: { config: AppConfig }) {
     askedOnLoad.current = true;
     void locateUser(true);
   }, [locateUser]);
-
-  useEffect(() => {
-    if (!config.useMock) {
-      const { pathname, search, hash } = window.location;
-      window.history.replaceState(null, "", `${pathname}${modeToSearch({ kind: "live" }, search)}${hash}`);
-    }
-  }, [config.useMock]);
 
   const retryTile = useCallback(() => {
     if (lastPoint.current) void select(lastPoint.current);
@@ -217,13 +210,30 @@ export function App({ config }: { config: AppConfig }) {
         </button>
       )}
       <div className={`mode-banner ${mode.kind}`} role="status">
-        {config.useMock ? modeLabel(mode) : "Live observations"}
+        {config.useMock || historical ? modeLabel(mode) : tile?.prediction ? "Experimental daily fire score" : "Live observations"}
       </div>
       <aside className="panel">
         <h1>
           Pyro {config.useMock && <span className="badge">mock data</span>}
         </h1>
-        <ModeSwitch mode={mode} now={new Date()} onChange={changeMode} historyAvailable={config.useMock} />
+        <ModeSwitch mode={mode} now={new Date()} onChange={changeMode} historyAvailable={true} />
+        {!config.useMock && (
+          <button onClick={async () => {
+            try {
+              const response = await fetch(`${config.orchestratorUrl}/history/examples`);
+              if (!response.ok) throw new Error("Historical archive is unavailable");
+              const data = await response.json();
+              const example = data.examples?.[0];
+              if (!example) throw new Error("No historical examples are available");
+              const home = stateAt(states, example.lat, example.long);
+              if (!home) throw new Error("Historical example is outside the map coverage");
+              await openState(home.properties.fips);
+              changeMode({ kind: "historical", date: example.date });
+              await select({ lat: example.lat, long: example.long });
+            } catch (error) { setSelection({ kind: "error", message: errorMessage(error) }); }
+          }}>Open archived fire-detection example</button>
+        )}
+        {!state && selection.kind === "error" && <p className="error">{selection.message}</p>}
         {state ? (
           <>
             <StatePanel
@@ -254,11 +264,12 @@ export function App({ config }: { config: AppConfig }) {
           terrain={tile !== null && config.terrain !== null}
           overlay={overlay}
           historical={historical}
+          relativeScore={tile?.prediction?.scoreKind === "sample_relative"}
         />
         <footer>
           Data: NASA FIRMS (fire detections), Open-Meteo (weather), LANDFIRE
           (fuels and vegetation), USGS 3DEP (terrain). State outlines: US Census Bureau.
-          {historical && " Perimeters: Mendeley daily perimeter dataset (CC BY 4.0)."}
+          {historical && config.useMock && " Perimeters: Mendeley daily perimeter dataset (CC BY 4.0)."}
           {config.terrain && <> {config.terrain.attribution}.</>}
         </footer>
       </aside>

@@ -9,10 +9,15 @@ dependencies = [
     "pandas>=2.2",
     "pyarrow>=17",
     "truststore>=0.10",
+    "scikit-learn>=1.7,<2",
+    "joblib>=1.4,<2",
 ]
 
 [dependency-groups]
-dev = ["pytest>=8"]
+dev = [
+    "httpx>=0.27,<1",
+    "pytest>=8",
+]
 
 [tool.uv]
 package = false

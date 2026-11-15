@@ -82,10 +82,10 @@ export function ModeSwitch({ mode, now, onChange, historyAvailable = true }: Pro
       ) : null}
       <p className="hint">
         {!historyAvailable
-          ? "Current satellite detections and source data for the selected region. Predictions and historical replay are not connected yet."
+          ? "Current observations and an experimental daily detection model where available. Historical replay and spread are not connected yet."
           : mode.kind === "live"
-            ? "Current model output, detections from the last 24 hours and predicted spread around extreme-risk areas."
-            : "What was observed on this day: archived satellite detections, model hindcast, and fire perimeters where mapped (western US, 2020 to 2024). Replays do not activate tiles."}
+            ? "Current observations and experimental daily fire-detection scores."
+            : "Replay available archived samples for a past day. Use the archived example button to find data; coverage is sparse."}
       </p>
     </section>
   );

@@ -73,6 +73,7 @@ function TileSummary({
       <>
         <p>Source data loaded for the selected 300-square-mile region. Spread predictions are not available yet.</p>
         <p>Satellite detections: {tile.detections.features.length}</p>
+        {tile.inference?.status === "unavailable" && <p className="hint">{tile.inference.message}</p>}
         {tile.bundle && (
           <>
             <dl className="tile-summary">
@@ -91,14 +92,7 @@ function TileSummary({
               <dt>Fuel map</dt>
               <dd>{tile.bundle.vegetation.version}</dd>
             </dl>
-            <button onClick={() => {
-              const url = URL.createObjectURL(new Blob([JSON.stringify(tile.bundle, null, 2)], { type: "application/json" }));
-              const link = document.createElement("a");
-              link.href = url;
-              link.download = `${tile.tileId}-sources.json`;
-              link.click();
-              setTimeout(() => URL.revokeObjectURL(url), 1000);
-            }}>Download source data</button>
+            <DownloadSources tile={tile} />
           </>
         )}
       </>
@@ -113,9 +107,18 @@ function TileSummary({
   const ages = tile.detections.features.map((f) => ageHours(f.properties.acquiredAt, reference));
   const newest = ages.length > 0 ? Math.min(...ages) : null;
   const historical = mode.kind === "historical";
+  const sampleRelative = tile.prediction?.scoreKind === "sample_relative";
 
   return (
     <>
+      {tile.history && <p className="hint">{tile.history.message} Retrospective weather reconstruction; not an archived forecast.</p>}
+      {sampleRelative && (
+        <p className="hint">
+          Experimental {tile.prediction!.horizonHours}-hour fire-detection score.
+          The model was trained on 10 km cells; finer map cells repeat those scores.
+          Scores are relative to the sampled training data, not calibrated burn probabilities.
+        </p>
+      )}
       <dl className="tile-summary">
         <dt>Tile</dt>
         <dd>
@@ -123,13 +126,13 @@ function TileSummary({
         </dd>
         <dt>Cells</dt>
         <dd>{tile.cells.features.length.toLocaleString("en-US")}</dd>
-        <dt>{historical ? "Peak (hindcast)" : "Peak fire probability"}</dt>
-        <dd>{peak === null ? "no data" : percent(peak)}</dd>
-        <dt>Extreme cells (≥ {percent(EXTREME_PROBABILITY)})</dt>
+        <dt>{historical ? "Peak (hindcast)" : sampleRelative ? "Peak daily detection score" : "Peak fire probability"}</dt>
+        <dd>{peak === null ? "no data" : sampleRelative ? `${Math.round(peak * 100)}/100` : percent(peak)}</dd>
+        <dt>{sampleRelative ? "High-score cells" : "Extreme cells"} (≥ {sampleRelative ? "80/100" : percent(EXTREME_PROBABILITY)})</dt>
         <dd>{extreme}</dd>
         <dt>{historical ? "Detections that day" : "Satellite detections"}</dt>
         <dd>
-          {ages.length}
+          {tile.history ? tile.history.observedDetectionCount : ages.length}
           {newest !== null && !historical && ` (newest ${formatAge(newest)})`}
         </dd>
         {!historical && (
@@ -139,7 +142,10 @@ function TileSummary({
           </>
         )}
       </dl>
-      {historical ? <Perimeters tile={tile} /> : (
+      <DownloadSources tile={tile} />
+      {sampleRelative ? (
+        <p className="hint">No spread direction, speed or future perimeter is predicted by this baseline.</p>
+      ) : historical ? <Perimeters tile={tile} /> : (
         <Spread tile={tile} show={showSpread} onToggle={onToggleSpread} />
       )}
     </>
@@ -240,4 +246,17 @@ function FragmentRow({ term, value }: { term: string; value: string }) {
       <dd>{value}</dd>
     </>
   );
+}
+
+
+function DownloadSources({ tile }: { tile: TileResponse }) {
+  if (!tile.bundle) return null;
+  return <button onClick={() => {
+    const url = URL.createObjectURL(new Blob([JSON.stringify(tile.bundle, null, 2)], { type: "application/json" }));
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `${tile.tileId}-sources.json`;
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }}>Download source data</button>;
 }

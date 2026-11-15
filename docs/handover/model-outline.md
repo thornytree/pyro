@@ -1,3 +1,18 @@
+## Implemented first baseline (2026-11-15)
+
+A supervised daily-detection baseline is now trained and connected through FastAPI
+`POST /predict`. It uses a training-compatible subset of 18 features from the
+compiled table, not the latent-sensor structure planned below. Five bootstrapped
+gradient-boosted classifiers were selected on validation data. Held-out test:
+ROC-AUC 0.758, AP 0.759 on 1,609 cell-days. See
+`apps/inference/model/training/report.json` and `apps/inference/README.md`.
+
+Scores are sample-relative daily FIRMS-detection scores at native 10 km resolution,
+not calibrated burn probabilities or validated spread forecasts. Same-day detection
+labels, unavailable fire history and old Daymet values are excluded from inputs.
+Express merges validated model cells or falls back to observations on model failure.
+The latent-state model and progression/perimeter targets remain future work.
+
 # Model outline
 
 Status: structure agreed on 2026-11-14 (latent fire state with per-sensor likelihoods). The model itself is not implemented; the harmonized FIRMS training data is ready (see `firms-harmonization.md`).

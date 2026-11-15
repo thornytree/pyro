@@ -23,3 +23,7 @@ __pycache__/
 # editor / OS
 .idea/
 .DS_Store
+
+# Local training inputs and trained artifacts
+/apps/inference/training/
+/apps/inference/model/artifacts/
