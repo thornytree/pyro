@@ -1,9 +1,10 @@
 // PROPOSED contract between apps/web and apps/orchestrator. Not yet agreed:
 // see "Proposed API contract" in apps/web/README.md. Geometry is GeoJSON in
 // EPSG:4326 so the web app does not depend on the model grid's projection.
-import type { FeatureCollection, Point, Polygon } from "geojson";
+import type { FeatureCollection, Point, Polygon, Position } from "geojson";
+import type { MapMode } from "../lib/mode";
 
-export type TileStatus = "ready" | "queued";
+export type TileStatus = "ready" | "queued" | "observed";
 
 export type FirmsSource =
   | "MODIS"
@@ -25,6 +26,8 @@ export interface DetectionProperties {
   acquiredAt: string;
   /** Unified 0 to 1 scale; null when the sensor reports none. */
   confidence: number | null;
+  /** VIIRS categorical confidence is preserved without inventing a probability. */
+  confidenceCategory?: "low" | "nominal" | "high" | null;
   /** Fire radiative power in MW. */
   frpMw: number | null;
 }
@@ -32,10 +35,58 @@ export interface DetectionProperties {
 export type CellCollection = FeatureCollection<Polygon, CellProperties>;
 export type DetectionCollection = FeatureCollection<Point, DetectionProperties>;
 
+/**
+ * Weather behind the spread prediction, sampled at the extreme-risk area.
+ * Live tiles only. Open-Meteo is sampled every 10 km per active tile
+ * (apps/orchestrator/src/fan-out/meteo.ts).
+ */
+export interface WeatherDrivers {
+  /** ISO 8601 UTC time of the weather sample. */
+  observedAt: string;
+  temperatureC: number;
+  relativeHumidityPct: number;
+  windSpeedKmh: number;
+  /** Direction the wind blows FROM, degrees clockwise from north. */
+  windFromDeg: number;
+}
+
+/**
+ * Predicted spread from one extreme-risk area (live tiles only). One
+ * feature per forecast horizon; larger horizons contain smaller ones.
+ */
+export interface SpreadProperties {
+  /** Hours ahead of `updatedAt` this outline describes. */
+  horizonHours: number;
+  /** Model confidence in this outline, 0 to 1. Falls as the horizon grows. */
+  confidence: number;
+  /** Where the spread starts, [long, lat]: the downwind edge of the extreme-risk cells. */
+  origin: Position;
+  /** Direction of the head fire, degrees clockwise from north. */
+  headingDeg: number;
+  /** Head fire rate of spread, km/h. */
+  rateKmh: number;
+  /** How far the head fire runs past `origin` by this horizon, km. */
+  headKm: number;
+}
+
+export type SpreadCollection = FeatureCollection<Polygon, SpreadProperties>;
+
+/** Observed fire perimeter for one day (historical tiles only). */
+export interface PerimeterProperties {
+  fireName: string;
+  /** UTC day the perimeter was mapped, YYYY-MM-DD. */
+  date: string;
+  /** Where the perimeter comes from, e.g. "Mendeley daily perimeters" or "WFIGS". */
+  source: string;
+  areaKm2: number;
+}
+
+export type PerimeterCollection = FeatureCollection<Polygon, PerimeterProperties>;
+
 export interface TileResponse {
-  /** Shareable ID of the 50 km tile containing the requested point. */
+  /** Opaque region ID. Live regions cover 300 square miles around the requested point. */
   tileId: string;
-  /** "queued": the tile was just activated and has no model output yet. */
+  /** "observed": source data loaded, no model output. "queued": actual pending model work. */
   status: TileStatus;
   /** [west, south, east, north] in degrees. */
   bounds: [number, number, number, number];
@@ -43,6 +94,12 @@ export interface TileResponse {
   updatedAt: string | null;
   cells: CellCollection;
   detections: DetectionCollection;
+  /** Live only: spread outlines around extreme-risk cells. Empty when no cell is extreme. */
+  spread?: SpreadCollection;
+  /** Live only: the weather the spread was computed from; null if none was sampled. */
+  drivers?: WeatherDrivers | null;
+  /** Historical only: observed perimeters on that day. Empty where no perimeter data exists. */
+  perimeters?: PerimeterCollection;
 }
 
 export interface LatLong {
@@ -50,8 +107,13 @@ export interface LatLong {
   long: number;
 }
 
+/**
+ * Live: GET /tiles (activates the tile). Historical: GET /history/tiles,
+ * read-only, so replaying the past never activates tiles (decision 2).
+ */
 export type TileFetcher = (
   point: LatLong,
+  mode: MapMode,
   signal?: AbortSignal,
 ) => Promise<TileResponse>;
 
@@ -79,5 +141,6 @@ export interface StatePreview {
 
 export type StatePreviewFetcher = (
   stateId: string,
+  mode: MapMode,
   signal?: AbortSignal,
 ) => Promise<StatePreview>;

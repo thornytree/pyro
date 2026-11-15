@@ -1,3 +1,9 @@
+> Current prototype integration: Express currently uses request-driven, concurrent
+> retrieval over a centered 300-square-mile region and returns `observed` source
+> data. The fixed 50 km grid and scheduler described below are retained as a
+> separate optional path; they are not started by the HTTP server. See
+> `apps/orchestrator/README.md` for the running API and required credentials.
+
 # Decisions
 
 ## 2026-11-14
@@ -17,6 +23,20 @@
 | 11 | Live fetchers follow decision 2 | The orchestrator polls FIRMS nationwide on a schedule and fetches weather only for active tiles; a user request only activates a tile and reads the cache. Replaces the per-click fetch on a 300 square mile box. See `apps/orchestrator/src/fan-out/README.md`. |
 | 12 | Landsat is included in the live FIRMS poll | It adds detections the other sensors miss (see "Landsat assessment" below) for one extra request per poll. Its weight is left to the model's per-sensor likelihood. |
 
+## Code that differs from these decisions (2026-11-15, needs team confirmation)
+
+The orchestrator merged on 2026-11-15 does not follow some decisions above. Nothing here is decided; the team should confirm or reverse each one.
+
+| Decision | What the running code does |
+|---|---|
+| 1. Daymet is training only | Daymet is fetched on every `GET /tiles`, for a caller-chosen past date range, under `historical_weather`. It is labelled historical context, not current weather. |
+| 2 and 11. Scheduled ingestion; a click only activates a tile | Every click fetches all five sources for the clicked region. The scheduler and 50 km grid are kept but not started. |
+| 6. Fixed 50 km tiles; the tile ID is the shareable location | Requests use a 300-square-mile (about 28 km) square centred on the click, with IDs like `region-<lat>_<long>`. Not a fixed grid, so not a stable shareable ID. |
+| 12. Landsat in the live poll | Only in the unused nationwide poll; the per-click FIRMS request uses the four MODIS/VIIRS feeds. |
+| Data sources: USGS 3DEP dropped in favour of LANDFIRE topography | Terrain comes from 3DEP (elevation, slope, aspect); LANDFIRE supplies fuels and canopy. |
+
+Consequences either way: request-driven fetching costs five provider calls per click (latency, quotas) and gives no national or statewide model output for the preview; the scheduled design gives fixed IDs and a preview but is not wired to any route.
+
 ## Proposed, not agreed (2026-11-14)
 
 - **Web / orchestrator contract.** `GET /tiles?lat=&long=` returning tile ID, status (`ready` or `queued`), bounds, and GeoJSON cells and detections in EPSG:4326. Written from the web side only; see `apps/web/README.md`.
@@ -24,6 +44,8 @@
 - **Statewide preview contract.** `GET /states/{fips}/preview` returning one value per 50 km tile in a state. Web side only, and it conflicts with decision 2 as written (inactive tiles have no model output); see `apps/web/README.md`.
 - **Tile grid projection and IDs.** 50 km tiles in EPSG:5070, a 95 x 59 grid, IDs like `r40c80`. Implemented as a working choice in `apps/inference/shared/grid.py` during the FIRMS harmonization; the team has not agreed it, and the web mock does not use it yet.
 - **Harmonized FIRMS schema.** One schema for all five sensors, with a 0/1/2 confidence class (MODIS keeps its 0 to 100 value separately) and non-fire detections kept but flagged. See `firms-harmonization.md`.
+- **Historical routes.** `GET /history/tiles?lat=&long=&date=` and `GET /history/states/{fips}/preview?date=`, same shapes as live, read-only so a replay never activates a tile. Web side only; see `apps/web/README.md`.
+- **Spread in the live tile.** Optional `spread` (outlines at 6, 12 and 24 h around cells at 80% or more, with heading, rate and reach) and `drivers` (the weather used). Goes beyond decision 3, which limits spread to a proof of concept where perimeters exist; on the web it is labelled experimental and runs on a mock formula. See `apps/web/README.md`.
 - **Terrain under the tile view.** Elevation tint, hillshade and contours from a configurable DEM source (`VITE_TERRAIN_*`); map rotation and pitch disabled so north stays up. Built in `apps/web`, not reviewed by the team.
 
 ## Design for decision 2

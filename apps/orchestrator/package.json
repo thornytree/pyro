@@ -6,11 +6,15 @@
     "dev": "tsx watch src/index.ts",
     "build": "tsc",
     "start": "node dist/index.js",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit && tsc -p tests/tsconfig.json",
+    "test": "node --import tsx --test tests/*.test.ts"
   },
   "dependencies": {
     "csv-parse": "^7.0.3",
-    "express": "^5.0.0"
+    "express": "^5.0.0",
+    "geotiff": "^3.0.5",
+    "netcdfjs": "^4.0.0",
+    "proj4": "^2.23.0"
   },
   "devDependencies": {
     "@types/express": "^5.0.0",

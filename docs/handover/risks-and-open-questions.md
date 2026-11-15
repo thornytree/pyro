@@ -20,8 +20,13 @@ Last updated: 2026-11-14 (evening, after the FIRMS harmonization and orchestrato
 | Revisit gaps | Polar orbiters pass a few times a day, so "live" can be hours old. | Show detection age on the map. Consider a geostationary source later (not evaluated). |
 | Open-Meteo free-tier limits | A dense CONUS grid polled hourly may exceed the free cap, and the free tier is non-commercial. | Check the pricing page; batch coordinates; coarsen the weather grid and interpolate. |
 | Attribution | Mendeley dataset is CC BY 4.0. | Credit it on the site if used. |
-| Web app runs on mock data | `apps/web` renders generated tiles; nothing real reaches the map yet. A demo could be mistaken for model output. | Keep the "mock data" badge; implement `GET /tiles` in the orchestrator and switch `VITE_USE_MOCK` off. |
-| API contract is one-sided | The tile response shape was defined by the web app alone. Inference may not be able to produce it cheaply (GeoJSON polygons per cell). | Agree it across the three apps before building either side further. |
+| Web app shows mock model output | Against the orchestrator the map shows real detections only; probability cells, spread and historical mode are generated with `VITE_USE_MOCK=true`. A mock demo could be mistaken for model output. | Keep the "mock data" badge; switch to real cells once inference is connected. |
+| Inference contract undefined | The orchestrator implements the web tile envelope, but the orchestrator-to-inference request and response do not exist. Inference may not produce GeoJSON polygons per cell cheaply. | Agree it (proposal in `apps/inference/model/inference/README.md`) before building the service. |
+| No model in the pipeline | The orchestrator returns observations only; nothing trains or serves the Pyro model, and there is no inference route or call. Every probability on the map is mock. | Follow the order in `apps/README.md`: bundle schema, grid, labels, training data, model, inference service, orchestrator call. |
+| Train/serve feature mismatch | Live weather is NOAA RRFS; training will need a different historical product. LANDFIRE is fetched at one vintage (LF2025) regardless of date. | Compare the training weather with RRFS on an overlapping period; use fuel vintages matching each training year. |
+| Bundle schema in two languages | `dataBundle` is defined in TypeScript; the Python service will need its own copy. | One schema, changed on both sides together, with a test against a real `/tiles` response. |
+| Per-click fan-out cost | Each click fetches five providers (several HTTP requests each); one failure fails the whole tile (502). Latency and provider quotas are untested under load. | Decide request-driven vs scheduled (decisions.md, 2026-11-15 table); consider returning partial data when a non-essential source fails. |
+| Spread shown before a spread model exists | The live map draws predicted spread outlines from a mock formula (wind, humidity). It could be read as a real forecast, which matters if it reaches public safety users. | Keep the "experimental" and "mock data" labels; replace it with model output checked against the historical perimeters before any outside demo. |
 | Basemap provider terms | The example basemap (OpenFreeMap) was not reachable from the build sandbox and its terms were not read. | Verify it loads and check terms, or pick another MapLibre style. |
 
 ## Unverified facts
@@ -40,10 +45,13 @@ These came from memory or were not on the pages read. Confirm before building on
 
 ## Open questions for the team
 
-1. Model cell size inside a tile and time step? Is the working projection (EPSG:5070, IDs like `r40c80`) acceptable? (Tile size is decided: 50 km.)
+0. Request-driven fetching (running code) or scheduled ingestion per 50 km tile (decisions 2 and 11)? See the 2026-11-15 table in `decisions.md`. Several questions below depend on it.
+1. Model cell size and time step? The fan-out's 28 x 28 grid (about 1 km over a 300-square-mile region) is the candidate. Is the working 50 km projection (EPSG:5070, IDs like `r40c80`) still needed?
 2. Where does per-sensor overpass coverage come from?
 3. Hosting: where does ingestion run, and how often?
 4. Map stack for the frontend: MapLibre GL JS in the first cut (decision 10, pending team review). Basemap provider and DEM source for terrain still open.
 5. Does a second NASA dataset (for example Daymet) help with judging enough to justify the work?
-6. Are the `GET /tiles` and `GET /states/{fips}/preview` contracts proposed in `apps/web/README.md` acceptable to the orchestrator and inference owners? What should the preview show for inactive tiles?
-7. Are the polling cadence (FIRMS every 15 minutes, weather hourly) and the 200 active-tile cap right?
+6. `GET /tiles` is implemented. What should `GET /states/{fips}/preview` show, given that model output exists only for clicked regions? And what is the orchestrator-to-inference contract (proposal in `apps/inference/model/inference/README.md`)?
+7. Are the polling cadence (FIRMS every 15 minutes, weather hourly) and the 200 active-tile cap right? (Only relevant if the scheduler is used.)
+8. What does the historical map mode show: archived observations and perimeters only, or model hindcasts too (which need a trained model)? The web side proposes read-only `/history` routes with a daily time step, from November 2000.
+9. Should the live model predict spread (the web shows 6, 12 and 24 h outlines from a mock formula)? If so, who builds it, and how is it checked against the historical perimeters? Weather is sampled every 10 km, coarser than the 1 km cells the web now assumes.

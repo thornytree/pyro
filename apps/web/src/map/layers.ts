@@ -8,6 +8,13 @@ export const PREVIEW_SOURCE = "pyro-preview";
 export const MASK_SOURCE = "pyro-mask";
 export const SELECTED_SOURCE = "pyro-selected-state";
 export const LIFT_SOURCE = "pyro-lift";
+export const USER_SOURCE = "pyro-user-location";
+export const SPREAD_SOURCE = "pyro-spread";
+export const SPREAD_ARROW_SOURCE = "pyro-spread-arrow";
+export const PERIMETER_SOURCE = "pyro-perimeters";
+
+/** Layers toggled together by "Show predicted spread". */
+export const SPREAD_LAYER_IDS = ["pyro-spread-fill", "pyro-spread-line", "pyro-spread-arrow"];
 
 export const STATES_FILL_LAYER = "pyro-states-fill";
 export const PREVIEW_FILL_LAYER = "pyro-preview-fill";
@@ -28,6 +35,10 @@ export const PROBABILITY_STOPS: ReadonlyArray<readonly [number, string]> = [
   [0.75, "#fe9f6d"],
   [1, "#fcfdbf"],
 ];
+
+/** Predicted spread (live) and observed perimeters (historical). Distinct from the probability ramp. */
+export const SPREAD_COLOUR = "#5ce1e6";
+export const PERIMETER_COLOUR = "#ff4d4d";
 
 /** Detections older than this are drawn at minimum opacity. */
 export const DETECTION_FADE_HOURS = 24;
@@ -121,6 +132,44 @@ export const LAYERS: LayerSpecification[] = [
     },
   },
   {
+    id: "pyro-perimeter-fill",
+    type: "fill",
+    source: PERIMETER_SOURCE,
+    paint: { "fill-color": PERIMETER_COLOUR, "fill-opacity": 0.18 },
+  },
+  {
+    id: "pyro-perimeter-line",
+    type: "line",
+    source: PERIMETER_SOURCE,
+    paint: { "line-color": PERIMETER_COLOUR, "line-width": 2.5 },
+  },
+  {
+    // Each horizon adds a faint wash, so nested outlines darken towards the origin.
+    id: "pyro-spread-fill",
+    type: "fill",
+    source: SPREAD_SOURCE,
+    paint: { "fill-color": SPREAD_COLOUR, "fill-opacity": 0.12 },
+  },
+  {
+    // Nearer horizons are solid and heavier; the 24 h outline is dashed.
+    id: "pyro-spread-line",
+    type: "line",
+    source: SPREAD_SOURCE,
+    paint: {
+      "line-color": SPREAD_COLOUR,
+      "line-width": ["interpolate", ["linear"], ["get", "horizonHours"], 6, 3, 24, 1.75],
+      "line-dasharray": [3, 2],
+      "line-opacity": ["interpolate", ["linear"], ["get", "confidence"], 0, 0.6, 1, 1],
+    },
+  },
+  {
+    id: "pyro-spread-arrow",
+    type: "line",
+    source: SPREAD_ARROW_SOURCE,
+    layout: { "line-cap": "round", "line-join": "round" },
+    paint: { "line-color": SPREAD_COLOUR, "line-width": 2.5 },
+  },
+  {
     id: "pyro-tile-outline",
     type: "line",
     source: TILE_SOURCE,
@@ -165,5 +214,16 @@ export const LAYERS: LayerSpecification[] = [
     type: "line",
     source: LIFT_SOURCE,
     paint: { "line-color": "#fe9f6d", "line-width": 2 },
+  },
+  {
+    id: "pyro-user-location",
+    type: "circle",
+    source: USER_SOURCE,
+    paint: {
+      "circle-radius": 6,
+      "circle-color": "#4da3ff",
+      "circle-stroke-color": "#ffffff",
+      "circle-stroke-width": 2,
+    },
   },
 ];

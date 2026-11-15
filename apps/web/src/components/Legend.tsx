@@ -1,4 +1,5 @@
-import { NO_DATA_COLOUR, PROBABILITY_STOPS } from "../map/layers";
+import { NO_DATA_COLOUR, PERIMETER_COLOUR, PROBABILITY_STOPS, SPREAD_COLOUR } from "../map/layers";
+import { SPREAD_HORIZONS } from "../lib/spread";
 import { ELEVATION_STOPS } from "../map/terrain";
 
 function ElevationLegend() {
@@ -21,14 +22,47 @@ function ElevationLegend() {
   );
 }
 
-/** `terrain`: the tile view is drawing elevation under the heat map. */
-export function Legend({ terrain }: { terrain: boolean }) {
+export type LegendOverlay = "spread" | "perimeters" | null;
+
+function OverlayLegend({ overlay }: { overlay: Exclude<LegendOverlay, null> }) {
+  if (overlay === "perimeters") {
+    return (
+      <div className="legend-nodata">
+        <span className="swatch outline" style={{ borderColor: PERIMETER_COLOUR }} /> Observed
+        fire perimeter that day
+      </div>
+    );
+  }
+  return (
+    <div className="legend-nodata">
+      <span className="swatch outline dashed" style={{ borderColor: SPREAD_COLOUR }} /> Predicted
+      spread at {SPREAD_HORIZONS.join(", ")} h; arrow shows the head fire
+    </div>
+  );
+}
+
+/**
+ * `terrain`: the tile view is drawing elevation under the heat map.
+ * `overlay`: spread outlines (live) or perimeters (historical) on the map.
+ * `historical`: cell colours are a hindcast, not a forecast.
+ */
+export function Legend({
+  terrain,
+  overlay,
+  historical,
+}: {
+  terrain: boolean;
+  overlay: LegendOverlay;
+  historical: boolean;
+}) {
   const gradient = PROBABILITY_STOPS.map(
     ([stop, colour]) => `${colour} ${stop * 100}%`,
   ).join(", ");
   return (
     <div className="legend">
-      <div className="legend-title">Fire probability</div>
+      <div className="legend-title">
+        Fire probability{historical && " (hindcast for the chosen day)"}
+      </div>
       <div
         className="legend-bar"
         style={{ background: `linear-gradient(to right, ${gradient})` }}
@@ -45,6 +79,7 @@ export function Legend({ terrain }: { terrain: boolean }) {
         Fainter cells are less certain. Dots are satellite detections; they fade
         with age.
       </p>
+      {overlay && <OverlayLegend overlay={overlay} />}
       {terrain && <ElevationLegend />}
     </div>
   );

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { containsPoint } from "./geo";
-import { conusStates } from "./states";
+import { conusStates, stateAt } from "./states";
 
 describe("conusStates", () => {
   const states = conusStates();
@@ -27,5 +27,16 @@ describe("conusStates", () => {
     expect(at(-104.99, 39.74)).toBe("Colorado");
     expect(at(-121.49, 38.58)).toBe("California");
     expect(at(-97.74, 30.27)).toBe("Texas");
+  });
+});
+
+describe("stateAt", () => {
+  const states = conusStates();
+  it("finds the state containing a point", () => {
+    expect(stateAt(states, 39.74, -104.99)?.properties.fips).toBe("08");
+  });
+  it("returns undefined outside CONUS", () => {
+    expect(stateAt(states, 21.3, -157.86)).toBeUndefined();
+    expect(stateAt(states, 51.5, -0.12)).toBeUndefined();
   });
 });

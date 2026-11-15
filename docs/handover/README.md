@@ -1,6 +1,6 @@
 # Handover: pyro (NASA hackathon 2026)
 
-Last updated: 2026-11-14
+Last updated: 2026-11-15
 
 ## Goal
 
@@ -14,59 +14,68 @@ Hard requirement: at least one NASA dataset or API. NASA FIRMS covers it.
 
 | Area | State |
 |---|---|
-| Data source selection | Decided, see [data-sources.md](data-sources.md) |
-| Architecture | Scheduled ingestion per 50 km tile, all of CONUS; burn probability first. See [decisions.md](decisions.md) |
+| Data source selection | Decided, see [data-sources.md](data-sources.md). Terrain now comes from USGS 3DEP and live weather from NOAA RRFS via Open-Meteo (see the 2026-11-15 notes there). |
+| Architecture | **Running:** request-driven. `GET /tiles` fetches all five sources for a 300-square-mile region centred on the clicked point. **Decided (2 and 11):** scheduled ingestion per 50 km tile; that code exists but is not started. The team needs to confirm which design stays; see [decisions.md](decisions.md). |
 | Model design | Structure agreed (latent fire state, per-sensor likelihoods), see [model-outline.md](model-outline.md) |
 | FIRMS archive | Done. 21.0 M detections from all five sensors harmonized into one schema in `data/firms_harmonized` (gitignored). See [firms-harmonization.md](firms-harmonization.md) |
-| Ingestion code | Started. Python: FIRMS archive normalizer and loader in `apps/inference/sources/firms/`, schema and 50 km grid in `apps/inference/shared/`. TypeScript: scheduled ingestion in `apps/orchestrator/src/fan-out/` (decision 2): nationwide FIRMS poll of all five sensors, per-active-tile Open-Meteo sampling, tile lifecycle. Not yet wired to a route or run against the live APIs. NIFC / WFIGS, LANDFIRE and Daymet not started |
-| Model code | Not started |
-| Website / map | `apps/web`: MapLibre map with national view, state hover, statewide preview and tile drill-down, terrain (elevation tint, hillshade, contours) under the tile view, compass and scale bar. Runs on mock data only; the API contracts are web-side proposals. See `apps/web/README.md` |
-| Orchestrator | Express server that starts the ingestion scheduler when `FIRMS_MAP_KEY` is set. `GET /tiles` and `GET /states/{fips}/preview` are not implemented |
-| Repo | App scaffolds under `apps/`, docs and folder READMEs |
+| Live data retrieval | Done in `apps/orchestrator/src/fan-out/`: FIRMS (MODIS/VIIRS), NOAA RRFS weather via Open-Meteo, Daymet (Earthdata), USGS 3DEP terrain, LANDFIRE fuels, normalized onto a 28 x 28 (about 1 km) grid. Needs `FIRMS_MAP_KEY` and `EARTHDATA_TOKEN`. NIFC / WFIGS not started. |
+| Orchestrator API | `GET /health` and `GET /tiles` work and return `status: "observed"` (detections and the source bundle, no model cells). `GET /states/{fips}/preview` returns empty. No inference call; no `/history` routes. |
+| Model code | **Not started.** No training, no inference service, no Python mirror of the bundle schema. |
+| Website / map | `apps/web`: national view, state hover and preview, tile drill-down, terrain, compass and scale bar, browser location, live/predictive and historical modes, about 1 km cells, experimental predicted spread. Shows real detections from the orchestrator; cells, spread, preview and historical mode only work on mock data. See [frontend.md](frontend.md). |
 
 ## Docs in this folder
 
 - [decisions.md](decisions.md): what the team has decided, with dates
 - [data-sources.md](data-sources.md): which sources we use, which we dropped, and why
 - [model-outline.md](model-outline.md): agreed structure for the Pyro model
+- [frontend.md](frontend.md): what the map site does so far, and its gaps
 - [firms-harmonization.md](firms-harmonization.md): results and caveats of the FIRMS archive harmonization
 - [training-bundle.md](training-bundle.md): steps and status of combining FIRMS with weather, topography and Daymet for training
 - [risks-and-open-questions.md](risks-and-open-questions.md): known gaps and things nobody has verified yet
 
-## Done (2026-11-14)
+## Done
 
-- FIRMS archive obtained and harmonized for MODIS, VIIRS S-NPP, NOAA-20, NOAA-21 and Landsat; archive CSV columns verified ([firms-harmonization.md](firms-harmonization.md)).
-- 50 km CONUS tile grid implemented as a working choice: EPSG:5070, 95 x 59 tiles, IDs like `r40c80` (`apps/inference/shared/grid.py`). Not yet agreed by the team.
-- Live fetchers reworked to follow decision 2: FIRMS polled nationwide every 15 minutes, weather for active tiles only, tiles expire after 24 hours unviewed (`apps/orchestrator/src/fan-out/`, decision 11). The TypeScript tile grid matches the Python one.
-- Landsat assessed on the archive and added to the live poll (decision 12).
-- Web map extended with state hover, statewide preview, tile drill-down, terrain, compass and scale bar.
+2026-11-14:
+
+- FIRMS archive obtained and harmonized for MODIS, VIIRS S-NPP, NOAA-20, NOAA-21 and Landsat ([firms-harmonization.md](firms-harmonization.md)).
+- 50 km CONUS tile grid as a working choice: EPSG:5070, 95 x 59 tiles, IDs like `r40c80` (`apps/inference/shared/grid.py`). Not yet agreed.
+- Scheduled ingestion (nationwide FIRMS poll, weather per active tile) written in `apps/orchestrator/src/fan-out/` (decision 11); Landsat assessed and added (decision 12).
+- Web map: state hover, statewide preview, tile drill-down, terrain, compass and scale bar.
+
+2026-11-15:
+
+- Orchestrator serves `GET /tiles`: concurrent fetch of FIRMS, NOAA weather, Daymet, 3DEP and LANDFIRE for a centred 300-square-mile region, with safe error reporting. 25 tests.
+- Web map: live / historical mode switch, about 1 km cells, experimental spread, and display of the orchestrator's observed tiles.
 
 ## Next steps, in order
 
-1. Agree the grid projection and tile IDs (working choice above), then switch the web mock to the same IDs.
-2. Wire `GET /tiles` to the scheduler and integration-test the orchestrator.
-3. Make one test call to the FIRMS Area API (a MAP_KEY is needed for the fan-out) and record the live CSV columns per sensor.
-4. Verify the NIFC / WFIGS feed (endpoints, fields, history depth) and pull a sample. It is the agreed label source.
-5. Decide model cell size and time step inside a tile.
-6. Pull LANDFIRE fuels and terrain once, resample to the grid, cache.
-7. Historical Open-Meteo ingestion for training, aligned to the harmonized FIRMS dates and tiles.
-8. Find a per-sensor overpass coverage source, then implement the model.
-9. Implement `GET /tiles` in the orchestrator and turn `VITE_USE_MOCK` off.
+The remaining work is mostly the model and wiring it in. `apps/README.md` has the same list with more detail.
+
+1. **Confirm the architecture.** Request-driven (running) or scheduled per 50 km tile (decisions 2 and 11). This also settles the grid and the shareable location ID.
+2. **Mirror the bundle schema in Python** (`apps/inference/shared/`) from `apps/orchestrator/src/fan-out/types.ts`.
+3. **Decide the model cell grid and time step.** The fan-out's 28 x 28 (about 1 km) grid is the obvious candidate.
+4. **Verify NIFC / WFIGS** (endpoints, fields, history depth) and pull a sample. It is the agreed label source.
+5. **Build historical training bundles** with the same features as live: harmonized FIRMS, historical weather comparable to NOAA RRFS, LANDFIRE fuels of matching vintage.
+6. **Find a per-sensor overpass coverage source**, then train the model.
+7. **Inference service:** FastAPI `POST` route taking a bundle and returning per-cell probability and uncertainty.
+8. **Orchestrator integration:** call inference from `GET /tiles`, return `status: "ready"` with cells, fall back to `observed` on failure.
+9. **Web:** real cells then show automatically; decide the state preview, the `/history` routes and whether spread is built for real.
+10. Verify the basemap end to end and check provider terms (OpenFreeMap, DEM tiles, Open-Meteo) before any public demo.
 
 ## Conventions
 
-- Secrets (FIRMS `MAP_KEY`, any API tokens) come from environment variables. Never commit them; add `.env` to `.gitignore` before the first ingestion commit.
+- Secrets (`FIRMS_MAP_KEY`, `EARTHDATA_TOKEN`) live in `apps/orchestrator/.env`, which is gitignored. Never commit them or give them a `VITE_` prefix.
 - Source choices were checked against the providers' own pages on 2026-11-14. Re-check anything marked "unverified" before relying on it.
 
 ## Repo layout
 
-Added 2026-11-14, moved under `apps/` the same day to match the team structure. One folder per work item; each has a README with inputs, outputs and open questions.
+One folder per work item; each has a README with status, inputs, outputs and open questions.
 
 - `apps/web/`: the map site (TypeScript, React/Vite, MapLibre GL JS)
-- `apps/orchestrator/`: public API (TypeScript, Express)
-- `apps/orchestrator/src/fan-out/`: lat/long input and on-demand FIRMS and Open-Meteo fetchers (moved from `trigger/`; its README still carries the trigger notes)
-- `apps/inference/`: Python pipeline and model, exposed via FastAPI
-- `apps/inference/sources/{firms,weather,topography,daymet}/`: one fetcher per external source
-- `apps/inference/harmonization/`: builds the data bundle
-- `apps/inference/model/{training,inference}/`
-- `apps/inference/shared/`: schemas, grid, config
+- `apps/orchestrator/`: public API (TypeScript, Express). `src/app.ts` routes, `src/config.ts` environment.
+- `apps/orchestrator/src/fan-out/`: source retrieval and normalization for a requested point (FIRMS, Open-Meteo, Daymet, 3DEP, LANDFIRE), plus the unused scheduler and 50 km grid
+- `apps/inference/`: Python model side, to be exposed via FastAPI
+- `apps/inference/sources/firms/`: FIRMS archive tooling. The other `sources/*` folders have READMEs only; live retrieval moved to the orchestrator.
+- `apps/inference/harmonization/`: features and training bundles (not started)
+- `apps/inference/model/{training,inference}/` (not started)
+- `apps/inference/shared/`: FIRMS schema and 50 km grid

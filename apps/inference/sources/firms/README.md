@@ -1,6 +1,8 @@
 # sources/firms
 
-Work item 2: NASA FIRMS active fire detections (MODIS and VIIRS). This is the project's required NASA source.
+Work item 2: NASA FIRMS active fire detections (MODIS, VIIRS and Landsat). This is the project's required NASA source.
+
+This folder is the **archive** side: normalizing and loading historical detections for training. **Live** detections are fetched by the orchestrator (`apps/orchestrator/src/fan-out/firms.ts`): the four MODIS/VIIRS feeds for the requested region, plus an optional nationwide poll with Landsat that is not started.
 
 - **Input:** bounding box, day range (max 5 per request), optional date.
 - **Output:** detections normalized to the unified schema in `shared/`.
