@@ -10,7 +10,8 @@
 import { fetchFirmsNationwide } from "./firms.ts";
 import { parseTileId } from "./grid.ts";
 import { getTileWeather } from "./meteo.ts";
-import type { NationalDetections, TileBundle, TileWeather } from "./types.ts";
+import type TileBundle from "./types.ts";
+import type { NationalDetections, TileWeather } from "./types.ts";
 
 export type IngestionOptions = {
   firmsIntervalMs?: number;

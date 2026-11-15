@@ -1,7 +1,8 @@
 
 import { parse } from "csv-parse/sync";
+import { createRegionBounds } from "./region.ts";
 import { frameBounds, tileIdAt } from "./grid.ts";
-import type { FireDetection, FirmsSource, NationalDetections } from "./types.ts";
+import type { BoundingBox, FireDetection, FirmsSource, NationalDetections } from "./types.ts";
 
 // CSV parsers usually return strings; numeric fields may already be parsed by callers.
 export type FirmsRow = {
@@ -112,18 +113,19 @@ export const CONUS_FRAME = frameBounds();
  * Each day in the range counts as one transaction against the MAP_KEY's 5,000
  * per 10 minutes, so a 2-day poll of five feeds costs about 10.
  */
-export async function fetchFirmsNationwide(
-  options: { days?: number; mapKey?: string } = {},
-): Promise<NationalDetections> {
-  const { west, south, east, north } = CONUS_FRAME;
+async function fetchFirmsArea(
+  bounds: BoundingBox,
+  selectedSources: FirmsSource[],
+  options: { days?: number; mapKey?: string },
+): Promise<FireAttributes> {
+  const { west, south, east, north } = bounds;
   const days = options.days ?? 2;
   if (!Number.isInteger(days) || days < 1 || days > 5) {
     throw new Error("FIRMS day range must be an integer between 1 and 5.");
   }
   const mapKey = options.mapKey ?? process.env.FIRMS_MAP_KEY;
   if (!mapKey?.trim()) throw new Error("FIRMS_MAP_KEY is required.");
-  const fetchedAt = new Date().toISOString();
-  const datasets = await Promise.all(sources.map(async (source): Promise<FirmsDataset> => {
+  const datasets = await Promise.all(selectedSources.map(async (source): Promise<FirmsDataset> => {
     const url = `https://firms.modaps.eosdis.nasa.gov/api/area/csv/${encodeURIComponent(mapKey)}/${source}/${west},${south},${east},${north}/${days}`;
     let response: Response;
     try {
@@ -155,10 +157,31 @@ export async function fetchFirmsNationwide(
     // A valid header-only CSV means no detections.
     return { source, rows };
   }));
-  const { fire } = normalizeFireAttributes(datasets);
+  return normalizeFireAttributes(datasets);
+}
+
+/** Request-driven 300-square-mile region; retain the four MODIS/VIIRS feeds. */
+async function getFireAttributes(
+  lat: number, long: number,
+  options: { days?: number; mapKey?: string } = {},
+): Promise<FireAttributes> {
+  return fetchFirmsArea(createRegionBounds(lat, long), sources.filter(source => source !== "LANDSAT_NRT"),
+    { ...options, days: options.days ?? 1 });
+}
+
+export default getFireAttributes
+
+export { createRegionBounds as createFireBounds } from "./region.ts";
+
+/** Nationwide snapshot used only when the optional scheduler is started. */
+export async function fetchFirmsNationwide(
+  options: { days?: number; mapKey?: string } = {},
+): Promise<NationalDetections> {
+  const fetchedAt = new Date().toISOString();
+  const days = options.days ?? 2;
+  const { fire } = await fetchFirmsArea(CONUS_FRAME, sources, { ...options, days });
   return {
-    fetched_at: fetchedAt,
-    days,
+    fetched_at: fetchedAt, days,
     detections: fire.detections.filter(detection => detection.tile_id !== null),
   };
 }

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { CONUS_FRAME, fetchFirmsNationwide, normalizeFireAttributes } from "../src/fan-out/firms.ts";
+import getFireAttributes, { createFireBounds, normalizeFireAttributes } from "../src/fan-out/firms.ts";
 import type { FirmsRow } from "../src/fan-out/firms.ts";
 
 const row: FirmsRow = {
@@ -38,43 +38,55 @@ test("rejects invalid observations instead of inventing values", () => {
   assert.deepEqual(normalizeFireAttributes([]), { fire: { detections: [] } });
 });
 
-test("fetches all five feeds nationwide and keeps only detections inside the tile frame", async (t) => {
+test("fetches four feeds concurrently and handles quoted CSV and header-only results", async (t) => {
   const calls: string[] = [];
   t.mock.method(globalThis, "fetch", async (url: string) => {
     calls.push(url);
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(calls.length, 4);
     const csv = url.includes("/MODIS_NRT/")
-      ? `${header}\r\n34.05,-118.25,2026-11-14,0035,"Terra",80,12.5,1,1.2\r\n10,10,2026-11-14,0035,Terra,80,1,1,1\r\n`
-      : url.includes("/LANDSAT_NRT/")
-        ? "latitude,longitude,scan,track,acq_date,acq_time,satellite,instrument,confidence,daynight\n34.1,-118.3,4164,4962,2026-11-14,1825,L9,OLI-2,H,D\n"
-        : `${header}\n`;
+      ? `${header}\r\n34.05,-118.25,2026-11-14,0035,"Terra",80,12.5,1,1.2\r\n`
+      : `${header}\n`;
     return new Response(csv);
   });
-  const result = await fetchFirmsNationwide({ mapKey: "test-key", days: 2 });
-  assert.equal(calls.length, 5);
-  const { west, south, east, north } = CONUS_FRAME;
-  assert.ok(calls.every(url => url.endsWith(`/${west},${south},${east},${north}/2`)));
-  assert.equal(result.detections.length, 2);
-  const landsat = result.detections.find(d => d.source === "LANDSAT_NRT");
-  assert.equal(landsat?.frp_mw, null);
-  assert.equal(landsat?.scan_km, 0.03);
-  assert.equal(landsat?.tile_id, "r24c07");
+  const result = await getFireAttributes(34.05, -118.25, { mapKey: "test-key", days: 2 });
+  assert.equal(result.fire.detections.length, 1);
+  const bounds = createFireBounds(34.05, -118.25);
+  assert.ok(calls.every(url => url.endsWith(`/${bounds.west},${bounds.south},${bounds.east},${bounds.north}/2`)));
 });
 
 test("fails on HTTP errors, blank bodies, malformed headers and provider errors", async (t) => {
   for (const [body, status] of [["unavailable", 503], ["", 200], ["Invalid MAP_KEY", 200], ["latitude,longitude\n", 200]] as const) {
     const mock = t.mock.method(globalThis, "fetch", async () => new Response(body, { status }));
-    await assert.rejects(fetchFirmsNationwide({ mapKey: "test-key" }), /FIRMS/);
+    await assert.rejects(getFireAttributes(34.05, -118.25, { mapKey: "test-key" }), /FIRMS/);
     mock.mock.restore();
   }
   t.mock.method(globalThis, "fetch", async () => { throw new Error("URL containing secret-key"); });
-  await assert.rejects(fetchFirmsNationwide({ mapKey: "secret-key" }), error => {
+  await assert.rejects(getFireAttributes(34.05, -118.25, { mapKey: "secret-key" }), error => {
     assert.ok(error instanceof Error);
     assert.ok(!error.message.includes("secret-key"));
     return true;
   });
 });
 
-test("validates day range and key before fetching", async () => {
-  await assert.rejects(fetchFirmsNationwide({ days: 6, mapKey: "test" }), /day range/);
-  await assert.rejects(fetchFirmsNationwide({ mapKey: "" }), /FIRMS_MAP_KEY/);
+test("validates coordinates and day range before fetching", async () => {
+  await assert.rejects(getFireAttributes(91, 0, { mapKey: "test" }), /latitude/);
+  await assert.rejects(getFireAttributes(34.05, -118.25, { days: 6, mapKey: "test" }), /day range/);
+  await assert.rejects(getFireAttributes(34.05, -118.25, { mapKey: "" }), /FIRMS_MAP_KEY/);
+});
+
+
+test("search boxes stay centered and cover 300 square miles at different latitudes", () => {
+  for (const lat of [0, 34.05, 60, -45]) {
+    const bounds = createFireBounds(lat, -100);
+    assert.ok(Math.abs((bounds.north + bounds.south) / 2 - lat) < 1e-10);
+    assert.ok(Math.abs((bounds.west + bounds.east) / 2 + 100) < 1e-10);
+    const radians = Math.PI / 180;
+    const areaKm2 = 6371.0088 ** 2 * (bounds.east - bounds.west) * radians *
+      (Math.sin(bounds.north * radians) - Math.sin(bounds.south * radians));
+    assert.ok(Math.abs(areaKm2 / 1.609344 ** 2 - 300) < 1e-6);
+  }
+  assert.throws(() => createFireBounds(90, 0), /pole/);
+  assert.throws(() => createFireBounds(0, 180), /antimeridian/);
+  assert.throws(() => createFireBounds(0, NaN), /longitude/);
 });

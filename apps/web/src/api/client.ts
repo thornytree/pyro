@@ -22,7 +22,7 @@ function isTileResponse(value: unknown): value is TileResponse {
   const v = value as Record<string, unknown>;
   return (
     typeof v.tileId === "string" &&
-    (v.status === "ready" || v.status === "queued") &&
+    (v.status === "ready" || v.status === "queued" || v.status === "observed") &&
     Array.isArray(v.bounds) &&
     v.bounds.length === 4 &&
     v.bounds.every((n) => typeof n === "number") &&

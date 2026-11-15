@@ -13,7 +13,7 @@ npm install
 npm run dev:web
 ```
 
-Opens on port 5173. With `VITE_USE_MOCK=true` (the default in `.env.example`) the app renders generated tiles and does not call the orchestrator. Set it to `false` once the orchestrator serves `GET /tiles`.
+Opens on port 5173. With `VITE_USE_MOCK=true` the app renders generated tiles without the orchestrator. The local `.env` and example now use `false` to call Express. Configure the orchestrator credentials and start it before clicking a region.
 
 `npm test --workspace @pyro/web` runs the unit tests; `npm run typecheck --workspace @pyro/web` type-checks.
 
@@ -63,14 +63,14 @@ Mode logic (URL parsing, date range, the reference time detections are aged from
 - **Terrain: any raster DEM, contours generated in the browser.** `VITE_TERRAIN_DEM_URL` takes Terrarium or Mapbox Terrain-RGB tiles. The example is AWS Terrain Tiles (public, no key). Contours come from `maplibre-contour`, which builds them in a web worker from the same DEM tiles the hillshade uses, so there is no contour tile server. Hillshade and elevation tint are MapLibre's own `hillshade` and `color-relief` layers.
 - **Detection age and confidence (first pass).** Detections are dots that fade over 24 hours; the panel shows the age of the newest one. Cell colour is probability and cell opacity drops as uncertainty rises.
 
-## Proposed API contract (not yet agreed with orchestrator / inference)
+## API contract (Express observations; Python inference pending)
 
 `GET {VITE_ORCHESTRATOR_URL}/tiles?lat=<number>&long=<number>` returns:
 
 | Field | Type | Note |
 |---|---|---|
-| `tileId` | string | Shareable ID of the 50 km tile containing the point. Scheme is the orchestrator's choice; the web app treats it as opaque. |
-| `status` | `"ready"` or `"queued"` | `queued`: tile was just activated, no model output yet. |
+| `tileId` | string | Opaque region ID; live requests cover 300 square miles centered on the point. |
+| `status` | `"observed"`, `"ready"` or `"queued"` | Live Express currently returns `observed`: real source data with no model output or queued task. |
 | `bounds` | `[west, south, east, north]` | Degrees. |
 | `updatedAt` | ISO 8601 string or null | When the model output was produced. |
 | `cells` | GeoJSON FeatureCollection of Polygons | Properties: `probability` (0 to 1), `uncertainty` (0 to 1). |
@@ -99,8 +99,9 @@ Tiles with `null` values are drawn grey ("no model output yet"). The preview is 
 - **A statewide preview conflicts with decision 2 as written.** Weather and the model run only for active tiles, so most preview squares would have no output (grey) on a real backend. Options: show FIRMS detection density for inactive tiles, run a cheap coarse model nationwide, or accept a mostly grey preview. Needs a decision before the orchestrator implements the endpoint.
 - **State outlines are bundled** from `us-atlas` (Census Bureau 1:10m, about 110 kB). States are matched by FIPS code; Alaska, Hawaii and territories are left out (decision 7).
 - **The mock preview is built in the browser** from the same generated tiles as `GET /tiles`, so its numbers match the full tile. Texas takes about 30 ms.
-- **Mock tiles are not the real grid.** The mock snaps to a 0.5 degree lat/long grid with 10 x 10 cells and IDs like `mock-79_-223`. Real tiles are 50 km (decision 6); the working choice is EPSG:5070 with IDs like `r40c80` (`apps/orchestrator/src/fan-out/grid.ts`, not yet agreed). Switch the mock once it is.
-- **The contract is unilateral.** `GET /tiles` and its response shape were written from the web side only. The orchestrator does not implement it yet; with `VITE_USE_MOCK=false` every click currently ends in an error.
+- **Mock tiles are not the real grid.** The mock snaps to a 0.5 degree lat/long grid with 50 x 50 cells (about 1 km) and IDs like `mock-79_-223`. Live requests use centered 300-square-mile regions, as requested for the current prototype.
+- **Inference is pending.** Express serves `GET /tiles` with real detections and the normalized source bundle. Prediction cells remain empty and `updatedAt` is null. State previews remain empty until statewide model results exist.
+- **Historical routes and spread are not on Express yet.** `GET /history/tiles` and `GET /history/states/{fips}/preview` return 404 from the current orchestrator, and its `GET /tiles` has no `spread` or `drivers`. With `VITE_USE_MOCK=false`, historical mode shows a load error and live mode shows observed detections only. Use `VITE_USE_MOCK=true` to see both modes.
 - **The CONUS check is a bounding box** (`src/lib/conus.ts`). It accepts parts of Canada, Mexico and ocean. The orchestrator must do the real validation.
 - **Basemap not verified end to end.** The overlay was tested against a blank local style because the build sandbox could not reach OpenFreeMap. Confirm the example style URL loads, and read OpenFreeMap's terms before a public launch.
 - **Terrain not verified with the real basemap.** Checked in a headless browser against a blank style, so contour labels (which borrow the basemap's font and glyphs) were not seen. Confirm they render with OpenFreeMap. The elevation credit is in the panel footer, not MapLibre's attribution control; check the DEM provider's terms before a public launch.
@@ -126,3 +127,10 @@ Tiles with `null` values are drawn grey ("no model output yet"). The preview is 
 - National FIRMS detection layer shown before any tile is selected (decision 7 polls FIRMS nationwide); it needs its own endpoint.
 - Loading a tile from a shared tile ID in the URL.
 - Attribution: the panel credits NASA FIRMS, Open-Meteo and LANDFIRE. Add CC BY 4.0 credit for the Mendeley dataset if it is used, and NIFC / WFIGS if perimeters are shown.
+
+The Express response also includes `bundle` for inspection/inference integration;
+the web map consumes only the GeoJSON envelope. For observed results, categorical
+VIIRS confidence is preserved in `confidenceCategory`; numeric confidence is null.
+See [`apps/orchestrator/README.md`](../orchestrator/README.md) for startup and query
+options. The health endpoint reports configuration readiness, not proof that every
+upstream credential or requested historical date is authorized/available.

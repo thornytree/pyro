@@ -249,7 +249,7 @@ export function App({ config }: { config: AppConfig }) {
         />
         <footer>
           Data: NASA FIRMS (fire detections), Open-Meteo (weather), LANDFIRE
-          (fuels and terrain). State outlines: US Census Bureau.
+          (fuels and vegetation), USGS 3DEP (terrain). State outlines: US Census Bureau.
           {historical && " Perimeters: Mendeley daily perimeter dataset (CC BY 4.0)."}
           {config.terrain && <> {config.terrain.attribution}.</>}
         </footer>

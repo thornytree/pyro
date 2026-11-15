@@ -1,3 +1,9 @@
+> Current prototype integration: Express currently uses request-driven, concurrent
+> retrieval over a centered 300-square-mile region and returns `observed` source
+> data. The fixed 50 km grid and scheduler described below are retained as a
+> separate optional path; they are not started by the HTTP server. See
+> `apps/orchestrator/README.md` for the running API and required credentials.
+
 # Decisions
 
 ## 2026-11-14

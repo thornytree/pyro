@@ -4,7 +4,7 @@
 import type { FeatureCollection, Point, Polygon, Position } from "geojson";
 import type { MapMode } from "../lib/mode";
 
-export type TileStatus = "ready" | "queued";
+export type TileStatus = "ready" | "queued" | "observed";
 
 export type FirmsSource =
   | "MODIS"
@@ -26,6 +26,8 @@ export interface DetectionProperties {
   acquiredAt: string;
   /** Unified 0 to 1 scale; null when the sensor reports none. */
   confidence: number | null;
+  /** VIIRS categorical confidence is preserved without inventing a probability. */
+  confidenceCategory?: "low" | "nominal" | "high" | null;
   /** Fire radiative power in MW. */
   frpMw: number | null;
 }
@@ -82,9 +84,9 @@ export interface PerimeterProperties {
 export type PerimeterCollection = FeatureCollection<Polygon, PerimeterProperties>;
 
 export interface TileResponse {
-  /** Shareable ID of the 50 km tile containing the requested point. */
+  /** Opaque region ID. Live regions cover 300 square miles around the requested point. */
   tileId: string;
-  /** "queued": the tile was just activated and has no model output yet. */
+  /** "observed": source data loaded, no model output. "queued": actual pending model work. */
   status: TileStatus;
   /** [west, south, east, north] in degrees. */
   bounds: [number, number, number, number];
