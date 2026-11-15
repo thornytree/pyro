@@ -55,6 +55,23 @@ See [source adapters](src/fan-out/README.md) for units, versions and grid semant
 
 - **Inference call.** `/tiles` stops at observations: `cells` is empty, `updatedAt` is null and `/health` reports `inference: "not_connected"`. To add: an inference base URL in config, a call after fan-out with the `dataBundle`, merging the returned cells into the response with `status: "ready"`, and falling back to `observed` if inference fails or times out. The inference service and its route do not exist yet (`apps/inference/model/inference/README.md`).
 - **State preview.** `GET /states/{fips}/preview` returns no tiles. It needs model output for many regions at once, which the request-driven design does not produce; see the statewide-preview caveat in `apps/web/README.md`.
-- **Historical routes.** The web app's historical mode calls `GET /history/tiles` and `GET /history/states/{fips}/preview`, which return 404 here. Proposed in `apps/web/README.md`.
+- **Historical routes.** `GET /history/tiles` and `GET /history/states/{fips}/preview` are not implemented. The frontend disables historical replay with the real backend and keeps it available with mocks. Historical URL parameters normalize to live mode; live Daymet context is not a replay.
 - **Spread.** The web app accepts optional `spread` and `drivers` fields; nothing produces them.
 - **Scheduled ingestion.** The 50 km grid and scheduler in `src/fan-out/` are not started. Whether to keep request-driven fetching (every click fetches five providers) or move to the scheduled design of decisions 2 and 11 needs a team decision; see `docs/handover/decisions.md`.
+
+## Frontend contract alignment
+
+No live route or required request parameter changed. A state selection loads only
+`/states/{fips}/preview`; a point selection then invokes `/tiles?lat=&long=` and
+its five-provider `fanOutEntry`. The separate `requestTileAt`/scheduler path is not
+used by the browser. The response's `bundle` is required for `status: "observed"`.
+The frontend type-references `dataBundle`, verifies the requested location and
+cross-provider regional extents/dimensions, and uses response bounds for map framing.
+The source-data download contains this same bundle. Defaults for forecast horizon,
+Daymet dates and LANDFIRE version remain server-side; no frontend token is required.
+
+The API client displays safe backend diagnostic messages and preserves error
+`code` and `source`. The UI labels real results "Live observations", with no model
+probabilities, and shows Daymet dates explicitly as historical context. State
+previews remain empty until model outputs exist. See `apps/web/README.md` for the
+implemented contract and the future historical/model fields.

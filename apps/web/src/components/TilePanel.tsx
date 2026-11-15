@@ -73,6 +73,34 @@ function TileSummary({
       <>
         <p>Source data loaded for the selected 300-square-mile region. Spread predictions are not available yet.</p>
         <p>Satellite detections: {tile.detections.features.length}</p>
+        {tile.bundle && (
+          <>
+            <dl className="tile-summary">
+              <dt>Selected point</dt>
+              <dd>{tile.bundle.location.latitude.toFixed(5)}, {tile.bundle.location.longitude.toFixed(5)}</dd>
+              <dt>Weather</dt>
+              <dd>{tile.bundle.weather.temperature.toFixed(1)} °C, {Math.round(tile.bundle.weather.humidity)}% humidity</dd>
+              <dt>Wind</dt>
+              <dd>{tile.bundle.weather.wind_speed_kph.toFixed(1)} km/h from {compassPoint(tile.bundle.weather.wind_direction)}</dd>
+              <dt>Elevation</dt>
+              <dd>{tile.bundle.terrain.elevation_m === null ? "no data" : `${Math.round(tile.bundle.terrain.elevation_m)} m`}</dd>
+              <dt>Regional grid</dt>
+              <dd>{tile.bundle.weather_grid.rows} × {tile.bundle.weather_grid.columns} cells</dd>
+              <dt>Historical weather context</dt>
+              <dd>{tile.bundle.historical_weather.start_date} to {tile.bundle.historical_weather.end_date}</dd>
+              <dt>Fuel map</dt>
+              <dd>{tile.bundle.vegetation.version}</dd>
+            </dl>
+            <button onClick={() => {
+              const url = URL.createObjectURL(new Blob([JSON.stringify(tile.bundle, null, 2)], { type: "application/json" }));
+              const link = document.createElement("a");
+              link.href = url;
+              link.download = `${tile.tileId}-sources.json`;
+              link.click();
+              setTimeout(() => URL.revokeObjectURL(url), 1000);
+            }}>Download source data</button>
+          </>
+        )}
       </>
     );
   }

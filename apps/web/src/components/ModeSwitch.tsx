@@ -11,6 +11,7 @@ import {
 
 interface Props {
   mode: MapMode;
+  historyAvailable?: boolean;
   /** Current time; sets the latest date a replay may use. */
   now: Date;
   onChange: (mode: MapMode) => void;
@@ -20,7 +21,7 @@ interface Props {
  * Switches between the live / predictive map and a historical replay of one
  * day. In historical mode a date field and day-step buttons pick the day.
  */
-export function ModeSwitch({ mode, now, onChange }: Props) {
+export function ModeSwitch({ mode, now, onChange, historyAvailable = true }: Props) {
   const end = historyEnd(now);
   const setDate = (date: string) => onChange({ kind: "historical", date: clampHistoryDate(date, now) });
 
@@ -33,11 +34,13 @@ export function ModeSwitch({ mode, now, onChange }: Props) {
           className={mode.kind === "live" ? "active" : undefined}
           onClick={() => mode.kind !== "live" && onChange(LIVE)}
         >
-          Live / predictive
+          {historyAvailable ? "Live / predictive" : "Live observations"}
         </button>
         <button
           role="radio"
           aria-checked={mode.kind === "historical"}
+          disabled={!historyAvailable}
+          title={historyAvailable ? undefined : "Historical replay is available in mock mode until the archive API is connected."}
           className={mode.kind === "historical" ? "active historical" : undefined}
           onClick={() =>
             mode.kind !== "historical" &&
@@ -78,9 +81,11 @@ export function ModeSwitch({ mode, now, onChange }: Props) {
         </div>
       ) : null}
       <p className="hint">
-        {mode.kind === "live"
-          ? "Current model output, detections from the last 24 hours and predicted spread around extreme-risk areas."
-          : "What was observed on this day: archived satellite detections, model hindcast, and fire perimeters where mapped (western US, 2020 to 2024). Replays do not activate tiles."}
+        {!historyAvailable
+          ? "Current satellite detections and source data for the selected region. Predictions and historical replay are not connected yet."
+          : mode.kind === "live"
+            ? "Current model output, detections from the last 24 hours and predicted spread around extreme-risk areas."
+            : "What was observed on this day: archived satellite detections, model hindcast, and fire perimeters where mapped (western US, 2020 to 2024). Replays do not activate tiles."}
       </p>
     </section>
   );

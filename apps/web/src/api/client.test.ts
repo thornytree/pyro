@@ -1,5 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { ApiError, createStatePreviewFetcher, createTileFetcher } from "./client";
+import { toTileResponse } from "../../../orchestrator/src/tile-response";
+import { makeBundle } from "../../../orchestrator/tests/fixtures/bundle";
 import { LIVE } from "../lib/mode";
 import { buildMockTile } from "./mock";
 
@@ -42,8 +44,29 @@ describe("createTileFetcher", () => {
   });
 
   it("accepts observed data before predictions are connected", async () => {
-    const observed = { ...tile, status: "observed", updatedAt: null, cells: { type: "FeatureCollection", features: [] } };
+    const observed = toTileResponse(makeBundle({ latitude: point.lat, longitude: point.long }));
     await expect(createTileFetcher("http://api.test", fetchReturning(observed))(point, LIVE)).resolves.toEqual(observed);
+  });
+
+  it("rejects observations for a different selected point or mismatched provider extent", async () => {
+    const observed = toTileResponse(makeBundle({ latitude: point.lat, longitude: point.long }));
+    const wrongPoint = structuredClone(observed);
+    wrongPoint.bundle.location.longitude += 0.01;
+    const wrongBounds = structuredClone(observed);
+    wrongBounds.bundle.terrain.grid.bounds.east += 0.1;
+    for (const response of [wrongPoint, wrongBounds, { ...observed, bundle: undefined }]) {
+      await expect(createTileFetcher("http://api.test", fetchReturning(response))(point, LIVE)).rejects.toThrow(/selected region/);
+    }
+  });
+
+  it("surfaces safe backend source diagnostics instead of only an HTTP number", async () => {
+    const response = { error: { code: "SOURCE_FETCH_FAILED", source: "Daymet", message: "Daymet failed (HTTP 404): dataset not found." } };
+    await expect(createTileFetcher("http://api.test", fetchReturning(response, 502))(point, LIVE))
+      .rejects.toMatchObject({ status: 502, code: "SOURCE_FETCH_FAILED", source: "Daymet", message: response.error.message });
+  });
+
+  it("rejects bounds that do not contain the selected point", async () => {
+    await expect(createTileFetcher("http://api.test", fetchReturning({ ...tile, bounds: [-100, 30, -99, 31] }))(point, LIVE)).rejects.toThrow(/selected region/);
   });
 
   it("passes the abort signal through", async () => {

@@ -10,6 +10,7 @@ import {
   modeToSearch,
   referenceTime,
   sameMode,
+  supportedMode,
   shiftDate,
 } from "./mode";
 
@@ -97,4 +98,12 @@ describe("shiftDate", () => {
     expect(shiftDate("2026-11-13", 1, now)).toBe("2026-11-13");
     expect(shiftDate(HISTORY_START, -1, now)).toBe(HISTORY_START);
   });
+});
+
+
+// Historical UI remains usable with mocks without issuing unsupported real requests.
+it("limits real API mode to live while retaining mock history", () => {
+  const historical = { kind: "historical", date: "2020-07-01" } as const;
+  expect(supportedMode(historical, false)).toEqual({ kind: "live" });
+  expect(supportedMode(historical, true)).toEqual(historical);
 });

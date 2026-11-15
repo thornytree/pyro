@@ -1,7 +1,7 @@
-// PROPOSED contract between apps/web and apps/orchestrator. Not yet agreed:
-// see "Proposed API contract" in apps/web/README.md. Geometry is GeoJSON in
-// EPSG:4326 so the web app does not depend on the model grid's projection.
+// Live observation contract implemented by Express. Historical/model fields remain
+// optional until those backend routes exist. GeoJSON coordinates use EPSG:4326.
 import type { FeatureCollection, Point, Polygon, Position } from "geojson";
+import type { dataBundle } from "../../../orchestrator/src/fan-out/types";
 import type { MapMode } from "../lib/mode";
 
 export type TileStatus = "ready" | "queued" | "observed";
@@ -37,8 +37,7 @@ export type DetectionCollection = FeatureCollection<Point, DetectionProperties>;
 
 /**
  * Weather behind the spread prediction, sampled at the extreme-risk area.
- * Live tiles only. Open-Meteo is sampled every 10 km per active tile
- * (apps/orchestrator/src/fan-out/meteo.ts).
+ * Live model output only; the observation bundle has its own regional weather grid.
  */
 export interface WeatherDrivers {
   /** ISO 8601 UTC time of the weather sample. */
@@ -92,6 +91,8 @@ export interface TileResponse {
   bounds: [number, number, number, number];
   /** When the model output was produced; null while queued. */
   updatedAt: string | null;
+  /** Required for observed live responses; absent from generated mock tiles. */
+  bundle?: dataBundle;
   cells: CellCollection;
   detections: DetectionCollection;
   /** Live only: spread outlines around extreme-risk cells. Empty when no cell is extreme. */
@@ -108,8 +109,8 @@ export interface LatLong {
 }
 
 /**
- * Live: GET /tiles (activates the tile). Historical: GET /history/tiles,
- * read-only, so replaying the past never activates tiles (decision 2).
+ * Live: GET /tiles triggers regional fan-out. Historical routes are proposed
+ * and currently used only by mock/offline mode.
  */
 export type TileFetcher = (
   point: LatLong,
@@ -117,7 +118,7 @@ export type TileFetcher = (
   signal?: AbortSignal,
 ) => Promise<TileResponse>;
 
-// --- State preview (PROPOSED, see "Proposed API contract" in README) -------
+// --- State preview: Express currently returns an empty collection. -------
 
 export interface PreviewTileProperties {
   /** Same ID that GET /tiles returns for a point in this tile. */

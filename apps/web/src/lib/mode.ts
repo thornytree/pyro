@@ -102,3 +102,8 @@ export function shiftDate(date: string, days: number, now: Date): string {
   const moved = new Date(Date.parse(`${date}T00:00:00Z`) + days * 86_400_000);
   return clampHistoryDate(toIsoDate(moved), now);
 }
+
+/** Real historical endpoints are pending; never label current data as a past-day replay. */
+export function supportedMode(mode: MapMode, historyAvailable: boolean): MapMode {
+  return mode.kind === "historical" && !historyAvailable ? LIVE : mode;
+}

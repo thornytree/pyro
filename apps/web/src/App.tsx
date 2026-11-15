@@ -9,7 +9,7 @@ import { TilePanel, type Selection } from "./components/TilePanel";
 import type { AppConfig } from "./config";
 import { isInConusBounds } from "./lib/conus";
 import { locate } from "./lib/geolocation";
-import { type MapMode, modeFromSearch, modeLabel, modeToSearch, sameMode } from "./lib/mode";
+import { type MapMode, modeFromSearch, modeLabel, modeToSearch, sameMode, supportedMode } from "./lib/mode";
 import { conusStates, stateAt, type StateFeature } from "./lib/states";
 import { MapView } from "./map/MapView";
 
@@ -41,7 +41,7 @@ export function App({ config }: { config: AppConfig }) {
   );
 
   const [mode, setMode] = useState<MapMode>(() =>
-    modeFromSearch(window.location.search, new Date()),
+    supportedMode(modeFromSearch(window.location.search, new Date()), config.useMock),
   );
   const [showSpread, setShowSpread] = useState(true);
   const [state, setState] = useState<StateFeature | null>(null);
@@ -116,7 +116,8 @@ export function App({ config }: { config: AppConfig }) {
    * compared across modes. The mode is kept in the URL for sharing.
    */
   const changeMode = useCallback(
-    (next: MapMode) => {
+    (requested: MapMode) => {
+      const next = supportedMode(requested, config.useMock);
       if (sameMode(next, modeRef.current)) return;
       modeRef.current = next;
       setMode(next);
@@ -125,7 +126,7 @@ export function App({ config }: { config: AppConfig }) {
       if (openFips.current) void loadPreview(openFips.current);
       if (lastPoint.current) void select(lastPoint.current);
     },
-    [loadPreview, select],
+    [loadPreview, select, config.useMock],
   );
 
   /**
@@ -161,6 +162,13 @@ export function App({ config }: { config: AppConfig }) {
     askedOnLoad.current = true;
     void locateUser(true);
   }, [locateUser]);
+
+  useEffect(() => {
+    if (!config.useMock) {
+      const { pathname, search, hash } = window.location;
+      window.history.replaceState(null, "", `${pathname}${modeToSearch({ kind: "live" }, search)}${hash}`);
+    }
+  }, [config.useMock]);
 
   const retryTile = useCallback(() => {
     if (lastPoint.current) void select(lastPoint.current);
@@ -209,13 +217,13 @@ export function App({ config }: { config: AppConfig }) {
         </button>
       )}
       <div className={`mode-banner ${mode.kind}`} role="status">
-        {modeLabel(mode)}
+        {config.useMock ? modeLabel(mode) : "Live observations"}
       </div>
       <aside className="panel">
         <h1>
           Pyro {config.useMock && <span className="badge">mock data</span>}
         </h1>
-        <ModeSwitch mode={mode} now={new Date()} onChange={changeMode} />
+        <ModeSwitch mode={mode} now={new Date()} onChange={changeMode} historyAvailable={config.useMock} />
         {state ? (
           <>
             <StatePanel
