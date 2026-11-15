@@ -30,6 +30,7 @@ Hard requirement: at least one NASA dataset or API. NASA FIRMS covers it.
 - [data-sources.md](data-sources.md): which sources we use, which we dropped, and why
 - [model-outline.md](model-outline.md): agreed structure for the Pyro model
 - [firms-harmonization.md](firms-harmonization.md): results and caveats of the FIRMS archive harmonization
+- [training-bundle.md](training-bundle.md): steps and status of combining FIRMS with weather, topography and Daymet for training
 - [risks-and-open-questions.md](risks-and-open-questions.md): known gaps and things nobody has verified yet
 
 ## Done (2026-11-14)

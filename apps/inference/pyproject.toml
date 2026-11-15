@@ -8,6 +8,7 @@ dependencies = [
     "numpy>=1.26",
     "pandas>=2.2",
     "pyarrow>=17",
+    "truststore>=0.10",
 ]
 
 [dependency-groups]
