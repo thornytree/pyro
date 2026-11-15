@@ -40,3 +40,18 @@ def test_archive_clips_real_cells_and_keeps_counts_separate(tmp_path):
             assert south - 1e-9 <= py <= north + 1e-9
     with pytest.raises(ValueError, match="No archived samples"):
         archive.tile(float(lat), float(lon), date(2024, 8, 2))
+
+
+def test_examples_list_every_fire_cell_day_in_date_order(tmp_path):
+    rows = []
+    for day, col, fire, count in [("2025-01-02", 90, 1, 3), ("2024-08-01", 91, 1, 2),
+                                  ("2024-08-01", 92, 1, 9), ("2024-09-01", 93, 0, 0)]:
+        record = {key: 0.0 for key in FEATURES}
+        record.update(date=day, cell_row=180, cell_col=col, cell_id=grid.cell_id(180, col),
+                      latitude=40.0, longitude=-105.0, fire=fire, label_n_detections=count)
+        rows.append(record)
+    path = tmp_path / "test.csv.gz"
+    pd.DataFrame(rows).to_csv(path, index=False)
+    examples = HistoryArchive(path, SimpleNamespace()).examples()["examples"]
+    assert [(e["date"], e["detectionCount"]) for e in examples] == [
+        ("2024-08-01", 9), ("2024-08-01", 2), ("2025-01-02", 3)]

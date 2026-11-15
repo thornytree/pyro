@@ -212,9 +212,8 @@ for held-out metrics and limitations.
 
 Click **Open archived fire-detection example**. The app opens a held-out test
 cell-day, selects its state and date, and displays real model scores computed from
-archived weather. Each further click opens the next example in the list and wraps
-at the end. Scores come from
-archived weather. `GET /history/examples` supplies examples; `/history/tiles`
+archived weather. Each further click opens the next held-out fire cell-day in date
+order, oldest first, and wraps after the last. `GET /history/examples` supplies them; `/history/tiles`
 returns native-cell polygons plus `history` provenance. Blank regions mean no
 sample, not no fire. Counts describe full native cells even at clipped edges.
 The `date` is the archive's local-solar day. This is retrospective reconstruction,

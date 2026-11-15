@@ -22,7 +22,9 @@ class HistoryArchive:
         return self._data
 
     def examples(self):
-        rows = self.data[self.data.fire == 1].sort_values("label_n_detections", ascending=False).head(20)
+        # Every held-out fire cell-day, oldest first; the largest cell leads within a day.
+        rows = self.data[self.data.fire == 1].sort_values(
+            ["date", "label_n_detections", "cell_id"], ascending=[True, False, True])
         return {"examples": [{"date": r.date, "lat": r.latitude, "long": r.longitude,
                                "detectionCount": int(r.label_n_detections), "split": "test"}
                               for r in rows.itertuples()]}

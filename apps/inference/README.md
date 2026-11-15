@@ -110,8 +110,8 @@ provider availability. Model requests in that integration used real inference.
 
 ## Historical replay API
 
-`GET /history/examples` lists positive held-out test cell-days from the supplied
-`training/compiled/test.csv.gz`. `GET /history/tiles?lat=47.6497&long=-120.3906&date=2025-09-22`
+`GET /history/examples` lists every positive held-out test cell-day from the supplied
+`training/compiled/test.csv.gz`, oldest first (largest detection count first within a day). `GET /history/tiles?lat=47.6497&long=-120.3906&date=2025-09-22`
 scores available archived rows with the loaded ensemble. No live data is fetched.
 Only sampled native 10 km cells are drawn, clipped to the 300-square-mile region.
 No samples returns 404; a missing archive returns 503. Labels/counts are returned
