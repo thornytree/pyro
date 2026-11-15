@@ -29,6 +29,7 @@ Decision date: 2026-11-14. Facts below were read from each provider's page on th
 - `/api/data_availability/` reports which dates each source has
 - Why core: several independent sensors observing the same ground is exactly what the model arbitrates between
 - Status (2026-11-14): scheduled nationwide poll of all five NRT feeds, including `LANDSAT_NRT` (decisions 11 and 12), in `apps/orchestrator/src/fan-out/firms.ts`; not yet called with a real MAP_KEY. Landsat rows have no `frp` column.
+- Status (2026-11-15): `GET /tiles` requests the four MODIS/VIIRS NRT feeds for the clicked region; the nationwide poll is not started.
 - Unverified: returned column names. The page links to per-sensor attribute tables that were not read. Expected from memory: latitude, longitude, acquisition date/time, confidence, FRP, brightness temperature. Confirm with a test call.
 
 ### NASA FIRMS Archive
@@ -49,6 +50,7 @@ Decision date: 2026-11-14. Facts below were read from each provider's page on th
 - Historical Weather API and Historical Forecast API exist alongside the forecast API; `past_days` goes up to 92
 - Why core: one provider for both training history and live inference keeps features consistent
 - Status (2026-11-14): current weather (temperature, humidity, 10 m wind speed and direction, elevation) at 25 points per active tile, one request per tile per hour, in `apps/orchestrator/src/fan-out/meteo.ts` using the `openmeteo` npm SDK. No historical ingestion yet.
+- Status (2026-11-15): `GET /tiles` requests the NOAA RRFS CONUS model through Open-Meteo for 101 points per region (current and hourly: temperature, humidity, wind and gusts, precipitation, vapour pressure deficit, solar radiation). RRFS has little history, so "one provider for training and live" no longer holds automatically; the training weather source is open.
 - Unverified: free-tier call cap and exact non-commercial terms (on the pricing page, not read). Check before polling a dense CONUS grid.
 
 ### LANDFIRE
@@ -59,6 +61,7 @@ Decision date: 2026-11-14. Facts below were read from each provider's page on th
 - Access: full-extent downloads, LFPS REST API (lfps.usgs.gov), WCS/WMS, image service
 - CONUS projection: EPSG:5070
 - Use: download once, resample to our grid, cache. It is static between annual updates.
+- Status (2026-11-15): fetched per request from the LANDFIRE ImageServer (six layers: FBFM40, EVT, CC, CH, CBH, CBD; LF2025 by default), cached in memory for 24 hours. Terrain comes from USGS 3DEP instead (see Dropped).
 - Unverified: pixel size (expected 30 m from memory)
 
 ## Training only
@@ -67,6 +70,7 @@ Decision date: 2026-11-14. Facts below were read from each provider's page on th
 
 - URL: https://daymet.ornl.gov/getdata
 - 1 km daily gridded surface weather, hosted by NASA's ORNL DAAC (a second NASA dataset). Access by REST web service, single-pixel tool, or THREDDS tiles.
+- Status (2026-11-15): fetched on every `GET /tiles` for an explicit past date range via NASA Earthdata (needs `EARTHDATA_TOKEN`), which differs from the decision below; see decisions.md.
 - Decision (2026-11-14): used for training only, not in the real-time bundle. It is expected to be released on an annual cycle (from memory, not confirmed on the page), so it has no data for the current day.
 - Risk: a feature the model sees only in training cannot be used at inference. Daymet variables must map onto the same variables from Open-Meteo at serve time (temperature, precipitation, vapour pressure), and the two products will not agree exactly. Check the mismatch on an overlapping period before relying on it.
 
@@ -89,6 +93,8 @@ Station-based summaries (daily, monthly, yearly), not a grid. Token limited to 5
 ### USGS National Map
 
 Useful part is 3DEP elevation. LANDFIRE ships elevation, slope and aspect already aligned with its fuel layers, so this adds work without adding information.
+
+Status (2026-11-15): back in use. The orchestrator takes elevation from the 3DEP ImageServer (about 30 m) and derives slope and aspect itself.
 
 ## Labels
 

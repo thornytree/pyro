@@ -1,11 +1,21 @@
 # model/inference
 
-- **Input:** real-time bundle from `harmonization`, model artifact from `training/`.
-- **Exposed as:** a FastAPI endpoint called by `apps/orchestrator`.
-- **Output:** per-cell burn probability with uncertainty; later, spread direction, rate and predicted perimeter.
+Status (2026-11-15): not started.
+
+- **Input:** the `dataBundle` the orchestrator builds in `GET /tiles` (see `apps/orchestrator/src/fan-out/types.ts`), plus the model artifact from `training/`.
+- **Exposed as:** a FastAPI route called by `apps/orchestrator` after fan-out.
+- **Output:** per-cell burn probability with uncertainty; later, spread.
+
+## Proposed shape (not agreed)
+
+The orchestrator already returns the web's tile envelope with empty `cells`. The simplest integration is for inference to fill them:
+
+- Request: `POST /predict` with the bundle as JSON.
+- Response: `cells` as a GeoJSON FeatureCollection of Polygons in EPSG:4326, properties `probability` and `uncertainty` (both 0 to 1), plus `updatedAt` and a model version. Later, optional `spread` (see `apps/web/README.md`).
+- Orchestrator: merges `cells` into the tile response, sets `status: "ready"` and `updatedAt`, and falls back to `observed` if inference fails or times out.
 
 ## Open questions
 
-- Response format for the `apps/web` heat map. `apps/web/README.md` proposes GeoJSON cell polygons in EPSG:4326 with `probability` and `uncertainty` (both 0 to 1) per cell. Not agreed; payload size at small cell sizes is unchecked.
 - What `uncertainty` means (posterior standard deviation, interval width) and how it maps to 0 to 1.
-- Latency budget per request.
+- Latency budget. The fan-out already waits for five providers per click.
+- Payload size: 28 x 28 cells is small as GeoJSON; much finer cells would need a raster or array format.
